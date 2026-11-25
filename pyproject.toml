@@ -1,0 +1,36 @@
+[project]
+name = "llm-assist-kit"
+version = "0.1.0"
+description = "Bundle a project's prompt, directory tree and sources into one LLM chat context on the clipboard"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pyrefly>=1.5.0",
+    "pytest>=9.2.0",
+    "ruff>=0.17.6",
+]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["ctx"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.pyrefly]
+project-includes = ["ctx.py", "tests"]
+search-path = ["."]
