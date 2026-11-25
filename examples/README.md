@@ -6,21 +6,22 @@
 | --- | --- |
 | [`sample-project/`](sample-project/) | 取得元の擬似プロジェクト(Python の ToDo CLI + 簡易 Web ビューア) |
 | [`sample-context.md`](sample-context.md) | 実際に取得したコンテキスト(クリップボードに入る内容そのもの) |
-| [`sample-run-result.md`](sample-run-result.md) | スキルのスクリプトを `ctx.py run` で実行した結果(LLM に貼り返す内容そのもの) |
+| [`sample-run-result.md`](sample-run-result.md) | キットの search スキルのスクリプトを `ctx.py run` で実行した結果(LLM に貼り返す内容そのもの) |
+
+スキルはキットの [`skills/`](../skills/) にあるもの (プロジェクトの外) を使っています。
+キットの場所はマシンごとに違うので、例では `C:/tools/llm-assist-kit` に置いたものとして表しています。
 
 ## 取得コマンド
 
 ```powershell
-python ctx.py examples/sample-project -o examples/sample-context.md
+cd examples/sample-project
+python C:\tools\llm-assist-kit\ctx.py          # (関数を登録していれば ctx だけ)
 ```
-
-`ctx.py` を `sample-project/` に置いた場合は、そこで `python ctx.py` を実行すると同じ内容がクリップボードに入ります。
 
 ## 対象ファイルの確認 (`--list`)
 
 ```text
-PS> python ctx.py examples/sample-project --list
-     350 tok  .ctx/skills/todo-stats/stats.py
+PS> ctx --list
        9 tok  .gitignore
       23 tok  config/stage/prod.local.toml
       19 tok  docs/draft10.md
@@ -33,15 +34,15 @@ PS> python ctx.py examples/sample-project --list
      156 tok  src/todo/models.py
       19 tok  src/todo/scratch_a.py
      300 tok  src/todo/storage.py
-      73 tok  tests/fixtures/sample-todo.json
       33 tok  tests/fixtures/tmp
      180 tok  tests/test_storage.py
      100 tok  web/app.js
       49 tok  web/index.html
-       skill  run-tests  (.ctx/skills/run-tests/SKILL.md)
-       skill  todo-stats  (.ctx/skills/todo-stats/SKILL.md)
+       skill  git-diff  (C:/tools/llm-assist-kit/skills/git-diff/SKILL.md)
+       skill  run-tests  (C:/tools/llm-assist-kit/skills/run-tests/SKILL.md)
+       skill  search  (C:/tools/llm-assist-kit/skills/search/SKILL.md)
 
-18 ファイル / スキル 2 / 推定 2,791 トークン
+16 ファイル / スキル 3 / 推定 2,979 トークン
 ```
 
 ## `.ctxignore` の全パターン
@@ -72,40 +73,28 @@ PS> python ctx.py examples/sample-project --list
 | `.ctxignore` | 設定ファイル |
 | `.env.example` | 既定の秘密情報パターン `.env.*` |
 | `assets/logo.png` | 既定の画像パターン `*.png` |
-| `.ctx/skills/*/SKILL.md` | 「# スキル」欄に入る(下記) |
 
 `.ctxignore` が効くのは取得するフォルダ直下のものだけです(サブフォルダの `.ctxignore` は読みません)。
 
 ## スキルとスクリプト実行の流れ
 
-`sample-project/.ctx/skills/` に 2 つのスキルがあります。
-
-| スキル | 内容 |
-| --- | --- |
-| [`run-tests`](sample-project/.ctx/skills/run-tests/SKILL.md) | 変更を提案したら `python ctx.py run -- python -m pytest -q` の実行を依頼する |
-| [`todo-stats`](sample-project/.ctx/skills/todo-stats/SKILL.md) | ToDo データの質問には集計スクリプト [`stats.py`](sample-project/.ctx/skills/todo-stats/stats.py) の実行を依頼する |
-
-[`sample-context.md`](sample-context.md) の「# スキル」欄に、これらの `SKILL.md` が
-(`${SKILL_DIR}` を実際のパスに置き換えて)入っています。`stats.py` は通常のソースとして本文に入ります。
+[`sample-context.md`](sample-context.md) の「# スキル」欄に、キットの 3 つのスキル
+(`run-tests` / `git-diff` / `search`) の `SKILL.md` が入っています。
+`${SKILL_DIR}` と `${CTX}` は実際のパス (`C:/tools/llm-assist-kit/...`) に置き換わっているので、
+LLM はそのまま実行できるコマンドを示せます。スキルのスクリプトはプロジェクトの外にあるので、
+ツリーやソースコード欄には入りません。
 
 チャットでのやり取りは次のようになります。
 
-1. ユーザー: `python ctx.py` でコピーしたコンテキストを貼り、「未完了で古いタスクはある?」と質問
-2. LLM: todo-stats スキルに従い、実行するコマンドを示す
+1. ユーザー: `ctx` でコピーしたコンテキストを貼り、「TaskStore はどこで使われている?」と質問
+2. LLM: search スキルに従い、実行するコマンドを示す
 
    ```powershell
-   python ctx.py run -- python .ctx/skills/todo-stats/stats.py todo.json
+   python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/search/search.py TaskStore
    ```
-3. ユーザー: PowerShell で実行 → 結果がクリップボードに入るので、チャットに貼る
+3. ユーザー: プロジェクトのフォルダの PowerShell で実行 → 結果がクリップボードに入るので、チャットに貼る
    (貼る内容の実例: [`sample-run-result.md`](sample-run-result.md))
 4. LLM: 貼られた結果をもとに回答する
-
-`sample-run-result.md` は次のコマンドで作ったものです(日付を固定するため `--today` を付けています)。
-
-```powershell
-cd examples/sample-project
-python ../../ctx.py run -o ../sample-run-result.md -- python .ctx/skills/todo-stats/stats.py tests/fixtures/sample-todo.json --today 2026-11-25
-```
 
 ## 例の更新
 

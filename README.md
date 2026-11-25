@@ -5,14 +5,14 @@
 エージェントではない普通のチャット型 LLM (ChatGPT / Claude.ai / Gemini など) に、
 
 1. **冒頭プロンプト** (CLAUDE.md のような指示文)
-2. **スキル** (作業手順と補助スクリプトの説明。Claude Code の `SKILL.md` と同じ形式)
+2. **スキル** (このキットの `skills/` にある作業手順と補助スクリプトの説明。Claude Code の `SKILL.md` と同じ形式)
 3. **ディレクトリツリー**
 4. **各ファイルの生ソースコード**
 
 を **1 つのテキスト** にまとめてクリップボードへコピーします。あとはチャット欄に `Ctrl+V` するだけです。
 
 LLM はコマンドを実行できないので、スクリプトは自分で PowerShell から実行します。
-結果を LLM に見せたいときは `python ctx.py run -- <コマンド>` で実行すると、
+結果を LLM に見せたいときは `python <キット>\ctx.py run -- <コマンド>` で実行すると、
 結果が LLM 向けの形でクリップボードに入るので、そのままチャットに貼り付けます。
 
 - 標準ライブラリのみ (Python 3.11+)、`pip install` 不要
@@ -21,34 +21,49 @@ LLM はコマンドを実行できないので、スクリプトは自分で Pow
 
 ### セットアップ
 
-`ctx.py` を対象プロジェクトのルートフォルダにコピーするだけです。
+このキット (リポジトリ) を 1 か所に置きます。プロジェクトには何も置きません。
 
 ```
-my-project/
-├── ctx.py              ← ここに置く
-├── CONTEXT_PROMPT.md   ← (任意) 冒頭プロンプト
-├── .ctxignore          ← (任意) 追加の除外パターン
-├── .ctx/skills/        ← (任意) スキル
-│   └── <名前>/SKILL.md
-└── src/ ...
+C:\tools\llm-assist-kit\      ← キット (例)
+├── ctx.py
+└── skills\                    ← スキル (どのプロジェクトでも使う)
+    ├── run-tests\SKILL.md
+    ├── git-diff\SKILL.md, diff.py
+    └── search\SKILL.md, search.py
+
+my-project\                    ← 対象プロジェクト
+├── CONTEXT_PROMPT.md          ← (任意) 冒頭プロンプト
+├── .ctxignore                 ← (任意) 追加の除外パターン
+└── src\ ...
 ```
 
-### 使い方 (PowerShell)
+毎回パスを打たなくて済むように、PowerShell のプロファイル (`notepad $PROFILE`) に関数を登録しておくと便利です。
 
 ```powershell
-python ctx.py                    # クリップボードへコピー
-python ctx.py --list             # 対象ファイルと推定トークン数を確認 (コピーしない)
-python ctx.py -i "src/**"        # src 以下だけ
-python ctx.py -i "*.py" -i "*.md" # 拡張子で絞り込み
-python ctx.py -x "tests/**"      # 除外を追加
-python ctx.py -n                 # 行番号付き
-python ctx.py -p review.md       # 別の冒頭プロンプトを使う
-python ctx.py --no-prompt        # 冒頭プロンプトなし
-python ctx.py -s run-tests       # 入れるスキルを指定 (複数可。既定: すべて)
-python ctx.py --no-skills        # スキルを入れない
-python ctx.py -o context.md      # ファイルへ出力
-python ctx.py --stdout           # 標準出力へ
+function ctx { python C:\tools\llm-assist-kit\ctx.py @args }
 ```
+
+### 使い方 (PowerShell、プロジェクトのフォルダで)
+
+```powershell
+ctx                    # クリップボードへコピー (今いるフォルダが対象)
+ctx --list             # 対象ファイルと推定トークン数を確認 (コピーしない)
+ctx -i "src/**"        # src 以下だけ
+ctx -i "*.py" -i "*.md" # 拡張子で絞り込み
+ctx -x "tests/**"      # 除外を追加
+ctx -n                 # 行番号付き
+ctx -p review.md       # 別の冒頭プロンプトを使う
+ctx --no-prompt        # 冒頭プロンプトなし
+ctx -s search -s git-diff  # 入れるスキルを指定 (複数可。既定: すべて)
+ctx --no-skills        # スキルを入れない
+ctx -o context.md      # ファイルへ出力
+ctx --stdout           # 標準出力へ
+ctx C:\work\other     # 別のフォルダを対象にする
+```
+
+(関数を登録しない場合は `ctx` を `python C:\tools\llm-assist-kit\ctx.py` に読み替えてください。
+`ctx.py` をプロジェクトにコピーして `python ctx.py` と実行しても同じように動きます。
+その場合のスキルの場所は環境変数 `CTX_SKILLS_DIR` で指定します。)
 
 実行するとこのように表示されます。
 
@@ -76,34 +91,44 @@ python ctx.py --stdout           # 標準出力へ
 
 ### スキル
 
-`.ctx/skills/<名前>/SKILL.md` (と `.claude/skills/<名前>/SKILL.md`) を読み込み、冒頭プロンプトの後に
-「# スキル」欄として入れます。Claude Code のスキルと同じ形式なので、既存のものをそのまま使えます。
+キットの `skills/<名前>/SKILL.md` を読み込み、冒頭プロンプトの後に「# スキル」欄として入れます。
+スキルはプロジェクトに置かず、キットで管理してどのプロジェクトでも使います。
+Claude Code のスキルと同じ形式です。
+
+| スキル | 内容 |
+| --- | --- |
+| [`run-tests`](skills/run-tests/SKILL.md) | コードの変更を提案したら、テストの実行を依頼して結果を確認する |
+| [`git-diff`](skills/git-diff/SKILL.md) | 変更を反映した後、git の差分 ([`diff.py`](skills/git-diff/diff.py)) を見せてもらい提案どおりか確認する |
+| [`search`](skills/search/SKILL.md) | プロジェクト内を検索 ([`search.py`](skills/search/search.py)) して該当箇所を見せてもらう |
+
+スキルを追加するには `skills/<名前>/` に `SKILL.md` (とスクリプト) を置きます。
 
 ````markdown
 ---
-name: todo-stats
-description: todo.json の中身を集計する
+name: search
+description: プロジェクト内を文字列や正規表現で検索して、該当箇所を見せてもらう
 ---
-ToDo データについて質問されたら、推測せずに集計スクリプトの実行をユーザーに依頼してください。
+確認したい箇所があれば、検索の実行をユーザーに依頼してください。
 
 ```powershell
-python ctx.py run -- python ${SKILL_DIR}/stats.py todo.json
+python ${CTX} run -- python ${SKILL_DIR}/search.py "検索する文字列"
 ```
 ````
 
 - `name` / `description` は省略可 (`name` の既定はフォルダ名)
-- 本文の `${SKILL_DIR}` はスキルフォルダのパス (`.ctx/skills/todo-stats`) に置き換わります
-- スキル欄の先頭には「あなたはコマンドを実行できない。実行はユーザーに `python ctx.py run -- ...` で依頼し、
+- 本文の `${SKILL_DIR}` はスキルフォルダの実際のパス (例 `C:/tools/llm-assist-kit/skills/search`)、
+  `${CTX}` は ctx.py の実際のパスに置き換わるので、LLM はそのまま実行できるコマンドを示せます
+- スキル欄の先頭には「あなたはコマンドを実行できない。実行はユーザーに `python <ctx.py> run -- ...` で依頼し、
   貼られた結果を待つこと」という説明が自動で付きます
-- `SKILL.md` はスキル欄に入るので本文からは外します。同じフォルダのスクリプトは通常のファイルとして本文に入ります
-- 探すフォルダは `--skills-dir DIR` で変更できます
+- スキルの場所は `--skills-dir DIR` (複数可) か環境変数 `CTX_SKILLS_DIR` (`;` 区切り) で変更できます
+- スキルのスクリプトも ctx.py と同じく標準ライブラリだけで書きます
 
 ### 実行結果のコピー (`run`)
 
 ```powershell
-python ctx.py run -- python -m pytest -q                # 引数をそのまま実行
-python ctx.py run "Get-ChildItem src | Select Name"      # 1 つの文字列なら PowerShell で実行
-python ctx.py run --tail 50 -- python -m pytest -q      # 最後の 50 行だけ (既定 200、0 で全部)
+ctx run -- python -m pytest -q                # 引数をそのまま実行
+ctx run "Get-ChildItem src | Select Name"      # 1 つの文字列なら PowerShell で実行
+ctx run --tail 50 -- python -m pytest -q      # 最後の 50 行だけ (既定 200、0 で全部)
 ```
 
 実行中の出力はそのまま画面に流れ、終わると次の形でクリップボードに入ります(`-o FILE` / `--stdout` も可)。

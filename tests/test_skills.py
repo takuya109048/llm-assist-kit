@@ -74,58 +74,90 @@ def test_frontmatter_absent_or_unclosed(text: str):
 
 
 # ---------------------------------------------------------------------------
-# load_skills
+# load_skills (スキルはプロジェクトの外に置く)
 # ---------------------------------------------------------------------------
 
 
-def test_load_skills_discovery(root: Path):
-    write(root, ".ctx/skills/b-skill/SKILL.md", skill_md("beta", "B の説明", "B 本文"))
-    write(root, ".ctx/skills/a-skill/SKILL.md", "フロントマター無し")
-    write(root, ".ctx/skills/a-skill/run.py", "print(1)\n")
-    write(root, ".ctx/skills/a-skill/lib/util.py", "x = 1\n")
-    write(root, ".ctx/skills/a-skill/__pycache__/run.cpython.pyc", b"\0")
-    write(root, ".ctx/skills/not-a-skill/README.md", "SKILL.md が無い")
-    write(root, ".claude/skills/gamma/SKILL.md", skill_md(description="C"))
-    skills = ctx.load_skills(root, ctx.SKILL_DIRS, None)
-    assert [s.name for s in skills] == ["a-skill", "beta", "gamma"]
-    a, b, c = skills
+@pytest.fixture
+def kit(tmp_path: Path) -> Path:
+    """プロジェクトの外にあるスキル置き場 (キットの skills/ に相当)"""
+    k = tmp_path / "kit" / "skills"
+    k.mkdir(parents=True)
+    return k
+
+
+def test_load_skills_discovery(root: Path, kit: Path):
+    write(kit, "b-skill/SKILL.md", skill_md("beta", "B の説明", "B 本文"))
+    write(kit, "a-skill/SKILL.md", "フロントマター無し")
+    write(kit, "a-skill/run.py", "print(1)\n")
+    write(kit, "a-skill/lib/util.py", "x = 1\n")
+    write(kit, "a-skill/__pycache__/run.cpython.pyc", b"\0")
+    write(kit, "not-a-skill/README.md", "SKILL.md が無い")
+    skills = ctx.load_skills([kit], None, root)
+    assert [s.name for s in skills] == ["a-skill", "beta"]
+    a, b = skills
     assert a.description == ""
     assert a.body == "フロントマター無し"
-    assert a.dir == ".ctx/skills/a-skill"
-    assert a.skill_file == ".ctx/skills/a-skill/SKILL.md"
+    # プロジェクトの外なので絶対パス (/ 区切り)
+    assert a.dir == (kit / "a-skill").resolve().as_posix()
+    assert a.skill_file == a.dir + "/SKILL.md"
     assert a.files == ["lib/util.py", "run.py"]
     assert (b.description, b.body, b.files) == ("B の説明", "B 本文", [])
-    assert c.dir == ".claude/skills/gamma"
 
 
-def test_load_skills_first_dir_wins_on_same_name(root: Path):
-    write(root, ".ctx/skills/x/SKILL.md", skill_md("same", body="ctx 側"))
-    write(root, ".claude/skills/y/SKILL.md", skill_md("same", body="claude 側"))
-    skills = ctx.load_skills(root, ctx.SKILL_DIRS, None)
-    assert [(s.name, s.body) for s in skills] == [("same", "ctx 側")]
+def test_load_skills_inside_root_uses_relative_path(root: Path):
+    write(root, "tools/skills/s/SKILL.md", skill_md("s"))
+    (skill,) = ctx.load_skills([root / "tools" / "skills"], None, root)
+    assert skill.dir == "tools/skills/s"
 
 
-def test_load_skills_substitutes_skill_dir(root: Path):
+def test_load_skills_first_dir_wins_on_same_name(root: Path, tmp_path: Path):
+    first, second = tmp_path / "first", tmp_path / "second"
+    write(first, "x/SKILL.md", skill_md("same", body="first"))
+    write(second, "y/SKILL.md", skill_md("same", body="second"))
+    write(second, "z/SKILL.md", skill_md("other"))
+    skills = ctx.load_skills([first, second], None, root)
+    assert [(s.name, s.body) for s in skills] == [("same", "first"), ("other", "")]
+
+
+def test_load_skills_substitutes_skill_dir(root: Path, kit: Path):
     write(
-        root,
-        ".ctx/skills/s/SKILL.md",
-        skill_md("s", body="python ${SKILL_DIR}/a.py ${SKILL_DIR}/b.py"),
+        kit, "s/SKILL.md", skill_md("s", body="python ${SKILL_DIR}/a.py ${SKILL_DIR}/b")
     )
-    (skill,) = ctx.load_skills(root, ctx.SKILL_DIRS, None)
-    assert skill.body == "python .ctx/skills/s/a.py .ctx/skills/s/b.py"
+    (skill,) = ctx.load_skills([kit], None, root)
+    d = (kit / "s").resolve().as_posix()
+    assert skill.body == f"python {d}/a.py {d}/b"
 
 
-def test_load_skills_select_in_given_order(root: Path):
+def test_load_skills_select_in_given_order(root: Path, kit: Path):
     for n in ["a", "b", "c"]:
-        write(root, f".ctx/skills/{n}/SKILL.md", skill_md(n))
-    skills = ctx.load_skills(root, ctx.SKILL_DIRS, ["c", "a"])
+        write(kit, f"{n}/SKILL.md", skill_md(n))
+    skills = ctx.load_skills([kit], ["c", "a"], root)
     assert [s.name for s in skills] == ["c", "a"]
     with pytest.raises(ValueError, match="zzz"):
-        ctx.load_skills(root, ctx.SKILL_DIRS, ["a", "zzz"])
+        ctx.load_skills([kit], ["a", "zzz"], root)
 
 
-def test_load_skills_none(root: Path):
-    assert ctx.load_skills(root, ctx.SKILL_DIRS, None) == []
+def test_load_skills_missing_dir(root: Path, tmp_path: Path):
+    assert ctx.load_skills([tmp_path / "nope"], None, root) == []
+
+
+def test_default_skill_dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    script = tmp_path / "kit" / "ctx.py"
+    monkeypatch.delenv(ctx.SKILLS_ENV, raising=False)
+    assert ctx.default_skill_dirs(script) == [tmp_path / "kit" / "skills"]
+    monkeypatch.setenv(ctx.SKILLS_ENV, f"/a{ctx.os.pathsep}/b{ctx.os.pathsep}")
+    assert ctx.default_skill_dirs(script) == [Path("/a"), Path("/b")]
+
+
+def test_display_path(tmp_path: Path):
+    root = tmp_path / "proj"
+    root.mkdir()
+    assert ctx.display_path(root / "a" / "b.py", root) == "a/b.py"
+    assert (
+        ctx.display_path(tmp_path / "kit", root)
+        == (tmp_path / "kit").resolve().as_posix()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -134,44 +166,71 @@ def test_load_skills_none(root: Path):
 
 
 @pytest.fixture
-def skilled(root: Path) -> Path:
+def skilled(root: Path, kit: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """プロジェクト (root) と、外にあるスキル (CTX_SKILLS_DIR で指定)"""
     write(root, "CONTEXT_PROMPT.md", "冒頭プロンプト")
     write(
-        root,
-        ".ctx/skills/check/SKILL.md",
-        skill_md("check", "テストを実行する", "python ctx.py run -- pytest -q"),
+        kit,
+        "check/SKILL.md",
+        skill_md(
+            "check",
+            "テストを実行する",
+            "python ${CTX} run -- python ${SKILL_DIR}/helper.py",
+        ),
     )
-    write(root, ".ctx/skills/check/helper.py", "print('helper')\n")
+    write(kit, "check/helper.py", "print('helper')\n")
+    monkeypatch.setenv(ctx.SKILLS_ENV, str(kit))
     return root
 
 
-def test_skills_section_in_context(skilled: Path, capsys: pytest.CaptureFixture[str]):
+def test_skills_section_in_context(
+    skilled: Path, kit: Path, capsys: pytest.CaptureFixture[str]
+):
     rc, out, err = run_ctx(capsys, str(skilled), "--no-git", "--stdout")
     assert rc == 0
+    d = (kit / "check").resolve().as_posix()
     # 冒頭プロンプト → スキル → プロジェクトの順
     assert out.startswith("冒頭プロンプト\n")
     assert out.index("# スキル") < out.index("# プロジェクト: proj")
     assert "あなたはスクリプトやコマンドを直接実行できません" in out
     assert "## スキル: check\n" in out
     assert "- 説明: テストを実行する" in out
-    assert "- フォルダ: `.ctx/skills/check/`" in out
-    assert "- ファイル: `.ctx/skills/check/helper.py`" in out
-    # SKILL.md はスキル欄に入るので本文には重複させない。スクリプトは本文に入る
-    assert "### .ctx/skills/check/SKILL.md" not in out
-    assert "### .ctx/skills/check/helper.py" in out
+    assert f"- フォルダ: `{d}/`" in out
+    assert f"- ファイル: `{d}/helper.py`" in out
+    runner = Path(ctx.__file__).resolve().as_posix()
+    assert f"python {runner} run -- python {d}/helper.py" in out
+    # スキルはプロジェクトの外なので、ツリーやソースコード欄には出てこない
+    assert "helper.py\n```" not in out.split("# プロジェクト")[1]
     assert "スキル 1" in err
 
 
-def test_no_skills_and_select(skilled: Path, capsys: pytest.CaptureFixture[str]):
-    write(skilled, ".ctx/skills/other/SKILL.md", skill_md("other"))
+def test_runner_path_is_absolute_when_ctx_is_outside(
+    skilled: Path, capsys: pytest.CaptureFixture[str]
+):
+    _, out, _ = run_ctx(capsys, str(skilled), "--no-git", "--stdout")
+    runner = Path(ctx.__file__).resolve().as_posix()
+    assert f"`python {runner} run --`" in out
+
+
+def test_root_defaults_to_current_dir(
+    skilled: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    monkeypatch.chdir(skilled / "src")
+    rc, out, _ = run_ctx(capsys, "--no-git", "--stdout")
+    assert rc == 0
+    assert "# プロジェクト: src" in out
+    assert "### main.py" in out
+
+
+def test_no_skills_and_select(
+    skilled: Path, kit: Path, capsys: pytest.CaptureFixture[str]
+):
+    write(kit, "other/SKILL.md", skill_md("other"))
     _, out, _ = run_ctx(capsys, str(skilled), "--no-git", "--stdout", "--no-skills")
     assert "# スキル" not in out
-    # --no-skills のときは SKILL.md も普通のファイルとして本文に入る
-    assert "### .ctx/skills/check/SKILL.md" in out
     _, out, _ = run_ctx(capsys, str(skilled), "--no-git", "--stdout", "-s", "other")
     assert "## スキル: other" in out
     assert "## スキル: check" not in out
-    assert "### .ctx/skills/check/SKILL.md" in out
 
 
 def test_unknown_skill_is_error(skilled: Path, capsys: pytest.CaptureFixture[str]):
@@ -181,36 +240,60 @@ def test_unknown_skill_is_error(skilled: Path, capsys: pytest.CaptureFixture[str
     assert "check" in err
 
 
-def test_skills_dir_option(root: Path, capsys: pytest.CaptureFixture[str]):
-    write(root, "prompts/skills/x/SKILL.md", skill_md("x"))
-    write(root, ".ctx/skills/y/SKILL.md", skill_md("y"))
+def test_skills_dir_option_overrides_env(
+    skilled: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    other = tmp_path / "other-skills"
+    write(other, "x/SKILL.md", skill_md("x"))
     _, out, _ = run_ctx(
-        capsys, str(root), "--no-git", "--stdout", "--skills-dir", "prompts/skills"
+        capsys, str(skilled), "--no-git", "--stdout", "--skills-dir", str(other)
     )
     assert "## スキル: x" in out
-    assert "## スキル: y" not in out
+    assert "## スキル: check" not in out
 
 
-def test_list_shows_skills(skilled: Path, capsys: pytest.CaptureFixture[str]):
+def test_list_shows_skills(
+    skilled: Path, kit: Path, capsys: pytest.CaptureFixture[str]
+):
     rc, out, err = run_ctx(capsys, str(skilled), "--no-git", "--list")
     assert rc == 0
-    assert "skill  check  (.ctx/skills/check/SKILL.md)" in out
-    assert " tok  .ctx/skills/check/helper.py" in out
-    assert "tok  .ctx/skills/check/SKILL.md" not in out
+    d = (kit / "check").resolve().as_posix()
+    assert f"skill  check  ({d}/SKILL.md)" in out
     assert "スキル 1" in err
 
 
-def test_runner_path_when_ctx_is_in_project(skilled: Path):
-    """ctx.py をプロジェクトに置いたとき、スキル欄の実行例はその置き場所を指す"""
-    tools = skilled / "tools"
+def test_skill_file_inside_project_is_not_duplicated(
+    root: Path, capsys: pytest.CaptureFixture[str]
+):
+    """スキル置き場をプロジェクト内に指定した場合、SKILL.md は本文に重複させない"""
+    write(root, "tools/skills/s/SKILL.md", skill_md("s"))
+    write(root, "tools/skills/s/run.py", "print(1)\n")
+    _, out, _ = run_ctx(
+        capsys,
+        str(root),
+        "--no-git",
+        "--stdout",
+        "--skills-dir",
+        str(root / "tools/skills"),
+    )
+    assert "## スキル: s" in out
+    assert "### tools/skills/s/SKILL.md" not in out
+    assert "### tools/skills/s/run.py" in out
+
+
+def test_runner_path_when_ctx_is_in_project(root: Path, kit: Path):
+    """ctx.py をプロジェクトにコピーして使う場合、実行例はその置き場所を指す"""
+    write(kit, "s/SKILL.md", skill_md("s"))
+    tools = root / "tools"
     tools.mkdir()
     shutil.copy(ctx.__file__, tools / "ctx.py")
     r = subprocess.run(
-        [sys.executable, str(tools / "ctx.py"), "..", "--no-git", "--stdout"],
+        [sys.executable, str(tools / "ctx.py"), "--no-git", "--stdout"],
         capture_output=True,
         text=True,
         encoding="utf-8",
-        cwd=tools,
+        cwd=root,
+        env=dict(ctx.os.environ, **{ctx.SKILLS_ENV: str(kit)}),
     )
     assert r.returncode == 0, r.stderr
     assert "`python tools/ctx.py run --`" in r.stdout

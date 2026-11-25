@@ -47,14 +47,16 @@ PROMPT_FILES = ["CONTEXT_PROMPT.md", ".ctxprompt.md", ".ctxprompt"]
 # 追加の除外パターンファイル (.gitignore 形式)
 IGNORE_FILE = ".ctxignore"
 
-# スキルを探すフォルダ (ルートからの相対パス。各サブフォルダの SKILL.md を読む)
-SKILL_DIRS = [".ctx/skills", ".claude/skills"]
+# スキル: プロジェクトの外 (この ctx.py と同じ場所の skills/) に置き、どのプロジェクトでも使う。
+# 各サブフォルダの SKILL.md を読む。環境変数 CTX_SKILLS_DIR か --skills-dir で変更できる
+SKILLS_DIR_NAME = "skills"
+SKILLS_ENV = "CTX_SKILLS_DIR"
 SKILL_FILE = "SKILL.md"
 
 SKILLS_PREAMBLE = """\
 # スキル
 
-このプロジェクトには、以下のスキル (作業手順と補助スクリプト) があります。
+以下のスキル (作業手順と補助スクリプト) が使えます。
 依頼内容に合うスキルがあれば、その手順に従ってください。
 
 - あなたはスクリプトやコマンドを直接実行できません。実行が必要なときは、
@@ -386,7 +388,7 @@ def _glob_regex(pattern: str) -> re.Pattern[str]:
 class Skill:
     name: str
     description: str
-    dir: str  # ルートからの相対パス (POSIX 形式)
+    dir: str  # プロジェクト内なら相対、外なら絶対パス (/ 区切り)
     body: str
     files: list[str]  # SKILL.md 以外のファイル (スキルフォルダからの相対パス)
 
@@ -416,11 +418,30 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
     return meta, "\n".join(lines[end + 1 :]).strip("\n")
 
 
-def load_skills(root: Path, dirs: list[str], only: list[str] | None) -> list[Skill]:
-    """dirs 以下の <name>/SKILL.md を読み込む。同名のスキルは先に見つかった方を使う"""
+def display_path(path: Path, root: Path) -> str:
+    """root の中ならルートからの相対パス、外なら絶対パス (どちらも / 区切り)"""
+    path = path.resolve()
+    try:
+        return path.relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def default_skill_dirs(script: Path) -> list[Path]:
+    """環境変数 CTX_SKILLS_DIR (複数は ; や : で区切る) → ctx.py と同じ場所の skills/"""
+    env = os.environ.get(SKILLS_ENV, "")
+    if env.strip():
+        return [Path(d).expanduser() for d in env.split(os.pathsep) if d.strip()]
+    return [script.parent / SKILLS_DIR_NAME]
+
+
+def load_skills(dirs: list[Path], only: list[str] | None, root: Path) -> list[Skill]:
+    """dirs 以下の <name>/SKILL.md を読み込む。同名のスキルは先に見つかった方を使う
+
+    パスは root (対象プロジェクト) の中なら相対、外なら絶対で表す
+    """
     skills: dict[str, Skill] = {}
-    for d in dirs:
-        base = root / d
+    for base in dirs:
         if not base.is_dir():
             continue
         for sub in sorted(base.iterdir(), key=lambda p: p.name.lower()):
@@ -431,7 +452,7 @@ def load_skills(root: Path, dirs: list[str], only: list[str] | None) -> list[Ski
             name = meta.get("name") or sub.name
             if name in skills:
                 continue
-            rel_dir = sub.resolve().relative_to(root.resolve()).as_posix()
+            rel_dir = display_path(sub, root)
             files = sorted(
                 (
                     f.relative_to(sub).as_posix()
@@ -473,8 +494,9 @@ def build_skills_section(skills: list[Skill], runner: str) -> str:
         if sk.files:
             info.append("- ファイル: " + ", ".join(f"`{sk.dir}/{f}`" for f in sk.files))
         out.append("\n".join(info) + "\n")
-        if sk.body.strip():
-            out.append(sk.body.strip() + "\n")
+        body = sk.body.replace("${CTX}", runner)  # ctx.py の実際のパス
+        if body.strip():
+            out.append(body.strip() + "\n")
     return "\n".join(out)
 
 
@@ -1039,7 +1061,7 @@ def main(argv: list[str] | None = None) -> int:
         "root",
         nargs="?",
         default=None,
-        help="対象ディレクトリ (既定: このスクリプトが置かれたフォルダ)",
+        help="対象ディレクトリ (既定: 今いるフォルダ)",
     )
     ap.add_argument(
         "-i",
@@ -1073,7 +1095,10 @@ def main(argv: list[str] | None = None) -> int:
         "--skills-dir",
         action="append",
         metavar="DIR",
-        help=f"スキルを探すフォルダ (複数可。既定: {' / '.join(SKILL_DIRS)})",
+        help=(
+            f"スキルを探すフォルダ (複数可。既定: 環境変数 {SKILLS_ENV}、"
+            f"無ければ ctx.py と同じ場所の {SKILLS_DIR_NAME}/)"
+        ),
     )
     ap.add_argument("--no-skills", action="store_true", help="スキルを入れない")
     ap.add_argument(
@@ -1106,29 +1131,29 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
 
-    root = Path(args.root).resolve() if args.root else script.parent
+    root = Path(args.root or ".").resolve()
     if not root.is_dir():
         print(f"エラー: ディレクトリではありません: {root}", file=sys.stderr)
         return 1
 
     prompt, prompt_path = load_prompt(root, args)
+    skill_dirs = (
+        [Path(d) for d in args.skills_dir]
+        if args.skills_dir
+        else default_skill_dirs(script)
+    )
     try:
-        skills = (
-            []
-            if args.no_skills
-            else load_skills(root, args.skills_dir or SKILL_DIRS, args.skill)
-        )
+        skills = [] if args.no_skills else load_skills(skill_dirs, args.skill, root)
     except ValueError as e:
         print(f"エラー: {e}", file=sys.stderr)
         return 1
-    try:
-        runner = script.relative_to(root.resolve()).as_posix()
-    except ValueError:
-        runner = script.name
+    runner = display_path(script, root)
     skills_section = build_skills_section(skills, runner) if skills else ""
 
     skip_paths = [script] + ([prompt_path] if prompt_path else [])
-    skip_paths += [root / sk.skill_file for sk in skills]
+    skip_paths += [
+        root / sk.skill_file for sk in skills
+    ]  # プロジェクト内にある場合だけ効く
     files, skipped = collect(root, args, skip_paths)
 
     if not files:
