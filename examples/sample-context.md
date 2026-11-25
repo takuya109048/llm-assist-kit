@@ -21,23 +21,33 @@
 
 ```text
 sample-project/
+├── config/
+│   └── stage/
+│       └── prod.local.toml
+├── docs/
+│   ├── draft10.md
+│   └── TODO.md
 ├── src/
 │   └── todo/
 │       ├── __init__.py
 │       ├── cli.py
 │       ├── models.py
+│       ├── scratch_a.py
 │       └── storage.py
 ├── tests/
+│   ├── fixtures/
+│   │   └── tmp
 │   └── test_storage.py
 ├── web/
 │   ├── app.js
 │   └── index.html
 ├── .gitignore
+├── keep.bak
 ├── pyproject.toml
 └── README.md
 ```
 
-## ソースコード (10 ファイル)
+## ソースコード (16 ファイル)
 
 ### .gitignore
 
@@ -46,6 +56,30 @@ __pycache__/
 .venv/
 *.log
 todo.json
+```
+
+### config/stage/prod.local.toml
+
+```toml
+# 5. * は / をまたがないので config/stage/ 以下は出力に入る
+```
+
+### docs/draft10.md
+
+```markdown
+# 9. ? は 1 文字だけなので draft10.md は出力に入る
+```
+
+### docs/TODO.md
+
+```markdown
+# 4. ルート固定ではないので docs/TODO.md は出力に入る
+```
+
+### keep.bak
+
+```
+2. !keep.bak で含め直されたファイル(出力に入る)
 ```
 
 ### pyproject.toml
@@ -161,6 +195,12 @@ class Task:
         )
 ```
 
+### src/todo/scratch_a.py
+
+```python
+"""10. [0-9] に a は含まれないので出力に入る"""
+```
+
 ### src/todo/storage.py
 
 ```python
@@ -203,6 +243,12 @@ class TaskStore:
                 self.save(tasks)
                 return task
         raise KeyError(f"タスク {task_id} は存在しません")
+```
+
+### tests/fixtures/tmp
+
+```
+3. tmp という名前の「ファイル」。tmp/ はディレクトリ専用なので出力に入る
 ```
 
 ### tests/test_storage.py

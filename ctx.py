@@ -24,8 +24,10 @@ from __future__ import annotations
 import argparse
 import ctypes
 import fnmatch
+import functools
 import io
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -249,7 +251,11 @@ LANG_BY_NAME = {
 
 
 class IgnoreRules:
-    """簡易 .gitignore パーサ。否定(!)・ディレクトリ指定(/)・アンカー(/)・** に対応。"""
+    """.gitignore 形式のパーサ
+
+    コメント・否定(!)・ディレクトリ指定(末尾 /)・アンカー(先頭/途中の /)・
+    `*` `?` `[...]` `**`・エスケープ(\\)に対応。
+    """
 
     def __init__(self) -> None:
         # (base_dir, pattern, negate, dir_only, anchored)
@@ -283,15 +289,9 @@ class IgnoreRules:
     @staticmethod
     def _match(pattern: str, rel: str, anchored: bool) -> bool:
         if anchored:
-            if fnmatch.fnmatchcase(rel, pattern):
-                return True
-            if "**" in pattern:
-                # "a/**/b" は "a/b" にもマッチさせる
-                if fnmatch.fnmatchcase(rel, pattern.replace("**/", "")):
-                    return True
-            return False
+            return _glob_regex(pattern).fullmatch(rel) is not None
         # アンカー無し: 任意階層のベース名にマッチ
-        return fnmatch.fnmatchcase(rel.rsplit("/", 1)[-1], pattern)
+        return _glob_regex(pattern).fullmatch(rel.rsplit("/", 1)[-1]) is not None
 
     def ignored(self, rel: str, is_dir: bool) -> bool:
         result = False
@@ -306,6 +306,50 @@ class IgnoreRules:
             if self._match(pattern, target, anchored):
                 result = not negate
         return result
+
+
+@functools.lru_cache(maxsize=1024)
+def _glob_regex(pattern: str) -> re.Pattern[str]:
+    """.gitignore のグロブを正規表現に変換する
+
+    - `*` `?` `[...]` は `/` をまたがない
+    - `**/` は 0 個以上のディレクトリ、末尾の `/**` は中身すべて、その他の `**` は何でも
+    """
+    out: list[str] = []
+    i, n = 0, len(pattern)
+    while i < n:
+        c = pattern[i]
+        if pattern.startswith("**", i):
+            if pattern.startswith("**/", i):
+                out.append("(?:.*/)?")
+                i += 3
+            else:
+                out.append(".*")
+                i += 2
+        elif c == "*":
+            out.append("[^/]*")
+            i += 1
+        elif c == "?":
+            out.append("[^/]")
+            i += 1
+        elif c == "[":
+            end = pattern.find("]", i + 2 if pattern[i + 1 : i + 2] in "!^" else i + 1)
+            if end == -1:
+                out.append(re.escape(c))
+                i += 1
+                continue
+            body = pattern[i + 1 : end]
+            if body[:1] in ("!", "^"):
+                body = "^" + body[1:]
+            out.append("[" + body.replace("\\", "\\\\") + "]")
+            i = end + 1
+        elif c == "\\" and i + 1 < n:
+            out.append(re.escape(pattern[i + 1]))
+            i += 2
+        else:
+            out.append(re.escape(c))
+            i += 1
+    return re.compile("".join(out), re.DOTALL)
 
 
 # ---------------------------------------------------------------------------

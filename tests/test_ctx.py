@@ -133,6 +133,55 @@ def test_ignore_escaped_hash():
     assert rules("\\#notes").ignored("#notes", False)
 
 
+def test_ignore_escaped_bang():
+    assert rules("\\!important").ignored("!important", False)
+
+
+@pytest.mark.parametrize(
+    ("pattern", "rel", "expected"),
+    [
+        # * と ? は / をまたがない (git と同じ)
+        ("config/*.toml", "config/a.toml", True),
+        ("config/*.toml", "config/sub/a.toml", False),
+        ("a/?.txt", "a/b.txt", True),
+        ("a/?.txt", "a/bc.txt", False),
+        ("a/?.txt", "a/b/c.txt", False),
+        # ** は 0 個以上のディレクトリ
+        ("**/x.py", "x.py", True),
+        ("**/x.py", "a/b/x.py", True),
+        ("a/**/b.txt", "a/b.txt", True),
+        ("a/**/b.txt", "a/x/y/b.txt", True),
+        ("a/**/b.txt", "z/a/b.txt", False),
+        ("logs/**", "logs/a/b.txt", True),
+        ("logs/**", "logsx/a.txt", False),
+        # 文字クラス
+        ("s[0-9].py", "s1.py", True),
+        ("s[0-9].py", "s10.py", False),
+        ("s[0-9].py", "sa.py", False),
+        ("[!a]bc", "zbc", True),
+        ("[!a]bc", "abc", False),
+        ("[^a]bc", "abc", False),
+        ("x[", "x[", True),  # 閉じない [ は文字として扱う
+        # 正規表現の特殊文字はそのまま文字として扱う
+        ("a+b(1).txt", "a+b(1).txt", True),
+        ("a.txt", "abtxt", False),
+        # 途中の \ は次の 1 文字を文字として扱う
+        ("a\\*b", "a*b", True),
+        ("a\\*b", "axb", False),
+    ],
+)
+def test_ignore_glob(pattern: str, rel: str, expected: bool):
+    assert rules(pattern).ignored(rel, False) is expected
+
+
+def test_ignore_cannot_reinclude_inside_excluded_dir(project: Project):
+    """除外したディレクトリの中は ! で含め直せない (git と同じ)"""
+    project.write(".ctxignore", "secret/\n!secret/ok.txt\n")
+    project.write("a.py", "x")
+    project.write("secret/ok.txt", "x")
+    assert project.listed("--no-git") == ["a.py"]
+
+
 # ---------------------------------------------------------------------------
 # matches_any
 # ---------------------------------------------------------------------------
