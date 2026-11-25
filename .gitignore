@@ -14,3 +14,8 @@ htmlcov/
 
 # local Claude Code settings
 .claude/settings.local.json
+
+# tools/build_apply_patch.py の作業場所
+/.build/
+# apply-patch スキルが zip から取り出した実行ファイル
+skills/apply-patch/.bin/

@@ -16,6 +16,9 @@ poetry, or conda. There is no lockfile.
 - Skills live in `skills/<name>/` (`SKILL.md` plus optional scripts), not in the
   target projects. Skill scripts also use only the standard library. In `SKILL.md`,
   write paths as `${SKILL_DIR}/...` and the runner as `python ${CTX} run -- ...`.
+- `skills/apply-patch/apply_patch.zip` holds prebuilt codex-rs `apply_patch` binaries.
+  Never edit it by hand; rebuild it with `python tools/build_apply_patch.py`
+  (needs rustup, git and mingw-w64). Do not commit `.build/` or `skills/apply-patch/.bin/`.
 
 ## Run code
 

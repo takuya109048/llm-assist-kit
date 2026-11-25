@@ -92,6 +92,7 @@ def test_load_skills_discovery(root: Path, kit: Path):
     write(kit, "a-skill/run.py", "print(1)\n")
     write(kit, "a-skill/lib/util.py", "x = 1\n")
     write(kit, "a-skill/__pycache__/run.cpython.pyc", b"\0")
+    write(kit, "a-skill/.bin/cache/tool.exe", b"\0")  # 隠しフォルダは一覧に出さない
     write(kit, "not-a-skill/README.md", "SKILL.md が無い")
     skills = ctx.load_skills([kit], None, root)
     assert [s.name for s in skills] == ["a-skill", "beta"]

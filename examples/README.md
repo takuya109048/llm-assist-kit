@@ -78,8 +78,8 @@ PS> ctx --list
 
 ## スキルとスクリプト実行の流れ
 
-[`sample-context.md`](sample-context.md) の「# スキル」欄に、キットの 3 つのスキル
-(`run-tests` / `git-diff` / `search`) の `SKILL.md` が入っています。
+[`sample-context.md`](sample-context.md) の「# スキル」欄に、キットの 4 つのスキル
+(`apply-patch` / `git-diff` / `run-tests` / `search`) の `SKILL.md` が入っています。
 `${SKILL_DIR}` と `${CTX}` は実際のパス (`C:/tools/llm-assist-kit/...`) に置き換わっているので、
 LLM はそのまま実行できるコマンドを示せます。スキルのスクリプトはプロジェクトの外にあるので、
 ツリーやソースコード欄には入りません。

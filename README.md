@@ -27,6 +27,7 @@ LLM はコマンドを実行できないので、スクリプトは自分で Pow
 C:\tools\llm-assist-kit\      ← キット (例)
 ├── ctx.py
 └── skills\                    ← スキル (どのプロジェクトでも使う)
+    ├── apply-patch\SKILL.md, apply.py, apply_patch.zip
     ├── run-tests\SKILL.md
     ├── git-diff\SKILL.md, diff.py
     └── search\SKILL.md, search.py
@@ -100,6 +101,7 @@ Claude Code のスキルと同じ形式です。
 | [`run-tests`](skills/run-tests/SKILL.md) | コードの変更を提案したら、テストの実行を依頼して結果を確認する |
 | [`git-diff`](skills/git-diff/SKILL.md) | 変更を反映した後、git の差分 ([`diff.py`](skills/git-diff/diff.py)) を見せてもらい提案どおりか確認する |
 | [`search`](skills/search/SKILL.md) | プロジェクト内を検索 ([`search.py`](skills/search/search.py)) して該当箇所を見せてもらう |
+| [`apply-patch`](skills/apply-patch/SKILL.md) | LLM が出したパッチで、ファイルの修正・新規作成・削除・移動をまとめて行う (下記) |
 
 スキルを追加するには `skills/<名前>/` に `SKILL.md` (とスクリプト) を置きます。
 
@@ -122,6 +124,30 @@ python ${CTX} run -- python ${SKILL_DIR}/search.py "検索する文字列"
   貼られた結果を待つこと」という説明が自動で付きます
 - スキルの場所は `--skills-dir DIR` (複数可) か環境変数 `CTX_SKILLS_DIR` (`;` 区切り) で変更できます
 - スキルのスクリプトも ctx.py と同じく標準ライブラリだけで書きます
+
+### ファイルの変更をパッチで適用する (apply-patch スキル)
+
+LLM にファイル全体を書き直させる代わりに、[codex](https://github.com/openai/codex) の
+`apply_patch` 形式のパッチを出させ、まとめて適用します。
+
+1. LLM が `*** Begin Patch` 〜 `*** End Patch` のパッチを出す (書き方は [SKILL.md](skills/apply-patch/SKILL.md) で LLM に伝わる)
+2. LLM の回答をコピーして、プロジェクトのフォルダで実行する
+
+   ```powershell
+   ctx run -- python C:\tools\llm-assist-kit\skills\apply-patch\apply.py
+   ```
+3. 結果 (`Success. Updated the following files: ...` かエラー) がクリップボードに入るので、チャットに貼り返す
+
+- クリップボードの中からパッチの部分だけを取り出すので、LLM の回答をまるごとコピーして構いません
+  (`-f patch.txt` でファイルからも読めます。`--dry-run` で変更されるファイルの一覧だけ表示)
+- 適用前に、追加・更新・削除するファイルの一覧を表示します
+- プロジェクトの外を指すパス (絶対パスや `..`) を含むパッチは適用しません
+- 途中で失敗したときは、そのとき適用した変更をすべて元に戻します (中途半端な状態を残しません)
+- 適用は [`apply_patch.zip`](skills/apply-patch/apply_patch.zip) に入っている codex-rs の `apply_patch`
+  (Windows x64 / Linux x64 用にビルドしたもの。Apache-2.0) で行います。
+  初回に `skills/apply-patch/.bin/` に取り出して使います
+- zip の作り直し: `python tools/build_apply_patch.py` (Linux で、Rust と mingw-w64 が必要。
+  ビルド元のコミットは zip の `BUILD_INFO.txt` に記録されます)
 
 ### 実行結果のコピー (`run`)
 

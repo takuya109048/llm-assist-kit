@@ -42,7 +42,12 @@ def git(cwd: Path, *args: str) -> None:
 
 
 def test_kit_has_skills():
-    assert [p.name for p in SKILL_DIRS] == ["git-diff", "run-tests", "search"]
+    assert [p.name for p in SKILL_DIRS] == [
+        "apply-patch",
+        "git-diff",
+        "run-tests",
+        "search",
+    ]
 
 
 @pytest.mark.parametrize("skill_dir", SKILL_DIRS, ids=lambda p: p.name)
