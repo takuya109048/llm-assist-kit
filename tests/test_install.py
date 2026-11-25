@@ -280,18 +280,27 @@ def test_ctx_function_works_in_powershell(shell: str, tmp_path: Path):
 def test_find_profiles_with_real_powershell(shell: str):
     if shell == "(none)":
         pytest.skip("PowerShell が無い")
-    found = dict(install.find_profiles())
-    if shell not in found:
-        # 失敗の原因が分かるよう、PowerShell の生の出力を表示する
-        r = subprocess.run(
-            [
-                shell,
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "$PROFILE.CurrentUserAllHosts",
-            ],
-            capture_output=True,
-        )
-        pytest.fail(f"{shell}: rc={r.returncode} out={r.stdout!r} err={r.stderr!r}")
-    assert found[shell].name == "profile.ps1"
+    r = subprocess.run(
+        [
+            shell,
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "$PROFILE.CurrentUserAllHosts",
+        ],
+        capture_output=True,
+    )
+    expected = Path(r.stdout.decode("utf-8").strip())
+    # powershell と pwsh が同じプロファイルなら 1 つにまとまるので、名前ではなくパスで確認する
+    paths = [p for _, p in install.find_profiles()]
+    assert expected in paths, (expected, paths)
+    assert len(paths) == len(set(paths))
+
+
+def test_same_profile_is_written_once(monkeypatch: pytest.MonkeyPatch):
+    """powershell と pwsh が同じプロファイルを指す環境 (macOS の CI など) では 1 回だけ"""
+    monkeypatch.setattr(install.shutil, "which", lambda exe: exe)
+    monkeypatch.setattr(
+        install, "run_powershell", lambda exe, cmd: "/home/u/profile.ps1"
+    )
+    assert install.find_profiles() == [("powershell", Path("/home/u/profile.ps1"))]

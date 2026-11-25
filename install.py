@@ -170,8 +170,8 @@ def find_profiles() -> list[tuple[str, Path]]:
     for exe in POWERSHELLS:
         if not shutil.which(exe):
             continue
-        # 日本語のユーザー名でも文字化けしないよう、出力を UTF-8 にしてから聞く。
-        # 環境によっては (macOS など) この切り替えが例外になるので、失敗しても続ける
+        # 日本語のユーザー名でも文字化けしないよう、出力を UTF-8 にしてから聞く
+        # (切り替えができない環境でも、プロファイルの場所は聞けるように続ける)
         out = run_powershell(
             exe,
             "try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}; "
@@ -179,6 +179,8 @@ def find_profiles() -> list[tuple[str, Path]]:
         )
         if out:
             path = Path(out.splitlines()[-1].strip())
+            # powershell と pwsh が同じ PowerShell 7 を指す環境 (macOS など) では
+            # 同じプロファイルになるので、1 回だけ書く
             if all(path != p for _, p in found):
                 found.append((exe, path))
     return found
