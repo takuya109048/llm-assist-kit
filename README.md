@@ -30,7 +30,7 @@ C:\tools\llm-assist-kit\      ← キット (例)
     └── apply-patch\SKILL.md, apply.py, apply_patch.zip
 
 my-project\                    ← 対象プロジェクト
-├── CONTEXT_PROMPT.md          ← (任意) 冒頭プロンプト
+├── AGENTS.md                  ← (任意) 冒頭プロンプト
 ├── .ctxignore                 ← (任意) 追加の除外パターン
 └── src\ ...
 ```
@@ -103,7 +103,7 @@ ctx C:\work\other     # 別のフォルダを対象にする
 
 ### 冒頭プロンプト
 
-ルート直下の `CONTEXT_PROMPT.md` → `.ctxprompt.md` → `.ctxprompt` の順に探し、無ければ内蔵の日本語プロンプトを使います。
+ルート直下の `AGENTS.md` → `.ctxprompt.md` → `.ctxprompt` の順に探し、無ければ内蔵の日本語プロンプトを使います。
 プロジェクトの概要・コーディング規約・回答形式などを書いておくと、CLAUDE.md と同じ感覚で使えます。
 
 ### スキル

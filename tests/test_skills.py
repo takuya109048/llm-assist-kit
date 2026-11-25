@@ -169,7 +169,7 @@ def test_display_path(tmp_path: Path):
 @pytest.fixture
 def skilled(root: Path, kit: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """プロジェクト (root) と、外にあるスキル (CTX_SKILLS_DIR で指定)"""
-    write(root, "CONTEXT_PROMPT.md", "冒頭プロンプト")
+    write(root, "AGENTS.md", "冒頭プロンプト")
     write(
         kit,
         "check/SKILL.md",

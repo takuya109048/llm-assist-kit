@@ -102,7 +102,7 @@ CTXIGNORE_CASES = [
     ("src/todo/scratch_a.py", True, "10. a は [0-9] に含まれない"),
     ("#memo.txt", False, "11. \\#memo.txt"),
     # .ctxignore 以外の理由で除外されるもの
-    ("CONTEXT_PROMPT.md", False, "冒頭プロンプトとして使用"),
+    ("AGENTS.md", False, "冒頭プロンプトとして使用"),
     (".ctxignore", False, "設定ファイル"),
     (".env.example", False, "既定の秘密情報パターン .env.*"),
     ("assets/logo.png", False, "既定の画像パターン *.png"),
