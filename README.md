@@ -10,7 +10,7 @@
 
 を **1 つのテキスト** にまとめてクリップボードへコピーします。あとはチャット欄に `Ctrl+V` するだけです。
 
-- 標準ライブラリのみ (Python 3.8+)、`pip install` 不要
+- 標準ライブラリのみ (Python 3.11+)、`pip install` 不要
 - Windows では Win32 API で直接クリップボードへ書き込むので日本語も文字化けしません
   (macOS: `pbcopy`、Linux: `wl-copy` / `xclip` / `xsel`、WSL: `clip.exe`)
 
@@ -97,3 +97,12 @@ my-project/
 ````
 
 Markdown 内に ``` を含むファイルは、より長いフェンス (````) で囲むので崩れません。
+
+### テスト
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+GitHub Actions で Windows / macOS / Linux × Python 3.11 / 3.13 を実行します。
+Windows では実際のクリップボードへ書き込み、読み戻して日本語・絵文字が化けないことを確認します。

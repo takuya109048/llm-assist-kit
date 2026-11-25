@@ -16,7 +16,7 @@ ctx.py - プロジェクト全体を「1つのコンテキスト」にまとめ�
     PS> python ctx.py -o out.md       # ファイルへ出力
     PS> python ctx.py --stdout        # 標準出力へ
 
-標準ライブラリのみで動作 (Python 3.8+)。
+標準ライブラリのみで動作 (Python 3.11+)。
 """
 from __future__ import annotations
 
