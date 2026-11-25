@@ -60,6 +60,10 @@
 6. **適用後の確認のためのコマンドを求めないでください。** パッチの後に、差分の表示、
    ファイル内容の表示、`git status` などで反映を確かめるよう頼みません。適用の成否と変更したファイルは、
    パッチのコマンド自体の結果 (`Success. Updated the following files: ...`) で分かります。
+7. **コードブロックの囲みは、中のバッククォートより長くしてください。** パッチの中に ``` (バッククォート 3 つ) を
+   含む行がある場合 (Markdown ファイルの修正など)、外側の powershell コードブロックはバッククォート 4 つ
+   (````powershell で始めて ```` で閉じる) にします。中に 4 つ連続があれば 5 つ、のように、
+   常に**中にある最長の連続より 1 つ多く**します。囲みが短いと、チャットの画面でコードブロックが途中で切れてしまいます。
 
 ### 出力するコマンド (必ずこの形)
 
@@ -125,6 +129,25 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 *** End Patch
 '@ | python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/apply-patch/apply.py -f -
 ```
+
+`README.md` にコードブロックを追加する場合 (パッチの中に ``` があるので、外側は ```` にする):
+
+````powershell
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+@'
+*** Begin Patch
+*** Update File: README.md
+@@
+ # todo-cli
++
++## インストール
++
++```bash
++pip install -e .
++```
+*** End Patch
+'@ | python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/apply-patch/apply.py -f -
+````
 
 ### 適用結果の確認
 
