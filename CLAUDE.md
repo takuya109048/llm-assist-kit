@@ -38,6 +38,8 @@ Run everything inside the activated `.venv`, or call the tools through
 - Test file naming: `test_*.py`
 - Test function naming: `test_*`
 - No `__init__.py` needed in `tests/`
+- Regenerate `examples/sample-context.md` after an intended output change:
+  `CTX_UPDATE_EXAMPLE=1 pytest tests/test_example.py`
 - Windows-only behavior (the clipboard) is tested on the `windows-latest` CI job;
   keep that job in the matrix
 
