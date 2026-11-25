@@ -318,7 +318,8 @@ def test_through_ctx_run(project: Path):
         capture_output=True,
         cwd=project,
     )
-    out = r.stdout.decode("utf-8")
+    # Windows では標準出力の改行が \r\n になるのでそろえる
+    out = r.stdout.decode("utf-8").replace("\r\n", "\n")
     assert r.returncode == 0, out + r.stderr.decode("utf-8", errors="replace")
     assert "- 終了コード: 0 (成功)" in out
     assert "追加: a.txt" in out
