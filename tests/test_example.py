@@ -7,6 +7,7 @@ ctx.py の出力形式を意図して変えたときは、次のコマンドで�
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,15 @@ import ctx
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 SAMPLE_PROJECT = EXAMPLES / "sample-project"
 SAMPLE_CONTEXT = EXAMPLES / "sample-context.md"
+SAMPLE_RUN_RESULT = EXAMPLES / "sample-run-result.md"
+# examples/README.md に載せている run の実行例
+SAMPLE_RUN_COMMAND = [
+    "python",
+    ".ctx/skills/todo-stats/stats.py",
+    "tests/fixtures/sample-todo.json",
+    "--today",
+    "2026-11-25",
+]
 
 
 def test_sample_context_is_up_to_date(capsys: pytest.CaptureFixture[str]) -> None:
@@ -28,6 +38,24 @@ def test_sample_context_is_up_to_date(capsys: pytest.CaptureFixture[str]) -> Non
     expected = SAMPLE_CONTEXT.read_text(encoding="utf-8").replace("\r\n", "\n")
     assert actual == expected, (
         "examples/sample-context.md が古くなっています。"
+        "CTX_UPDATE_EXAMPLE=1 pytest tests/test_example.py で更新してください"
+    )
+
+
+@pytest.mark.skipif(shutil.which("python") is None, reason="python コマンドが無い")
+def test_sample_run_result_is_up_to_date(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """examples/sample-run-result.md が `ctx.py run` の実際の出力と一致する"""
+    monkeypatch.chdir(SAMPLE_PROJECT)
+    rc = ctx.main(["run", "--stdout", "--", *SAMPLE_RUN_COMMAND])
+    assert rc == 0
+    actual = capsys.readouterr().out
+    if os.environ.get("CTX_UPDATE_EXAMPLE"):
+        SAMPLE_RUN_RESULT.write_text(actual, encoding="utf-8", newline="\n")
+    expected = SAMPLE_RUN_RESULT.read_text(encoding="utf-8").replace("\r\n", "\n")
+    assert actual == expected, (
+        "examples/sample-run-result.md が古くなっています。"
         "CTX_UPDATE_EXAMPLE=1 pytest tests/test_example.py で更新してください"
     )
 
@@ -60,6 +88,10 @@ CTXIGNORE_CASES = [
     (".ctxignore", False, "設定ファイル"),
     (".env.example", False, "既定の秘密情報パターン .env.*"),
     ("assets/logo.png", False, "既定の画像パターン *.png"),
+    # スキル: SKILL.md は「# スキル」欄に入るので本文には入らない。スクリプトは入る
+    (".ctx/skills/run-tests/SKILL.md", False, "スキル欄に入る"),
+    (".ctx/skills/todo-stats/SKILL.md", False, "スキル欄に入る"),
+    (".ctx/skills/todo-stats/stats.py", True, "スキルのスクリプト"),
 ]
 
 
