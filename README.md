@@ -67,6 +67,8 @@ python ctx.py --stdout           # 標準出力へ
 
 ### 出力形式
 
+実際の取得例は [examples/](examples/) にあります(擬似プロジェクトと、取得したコンテキストそのもの)。
+
 ````markdown
 (冒頭プロンプト)
 
