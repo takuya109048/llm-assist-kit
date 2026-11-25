@@ -44,6 +44,11 @@ FUNCTIONS = [
         "commands/addcommit.py",
         "git add -A と git commit -m をまとめて行う (addcommit メッセージ)",
     ),
+    PSFunction(
+        "reset",
+        "commands/reset.py",
+        "git reset --hard HEAD と git clean -fd をまとめて行う (確認あり。reset -y で確認なし)",
+    ),
 ]
 
 BEGIN_MARK = "# >>> llm-assist-kit >>>"
