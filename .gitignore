@@ -19,3 +19,5 @@ htmlcov/
 /.build/
 # apply-patch スキルが zip から取り出した実行ファイル
 skills/apply-patch/.bin/
+# marp-slides スキルが zip から取り出した実行ファイル
+skills/marp-slides/.bin/
