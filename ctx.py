@@ -896,7 +896,9 @@ def format_run_result(display: str, code: int, output: str, tail: int) -> str:
 
 def execute(cmd: list[str]) -> tuple[int, str]:
     """コマンドを実行し、出力を画面に流しながら集める。(終了コード, 出力)"""
-    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    # PYTHONUNBUFFERED: パイプ越しだと Python は標準出力だけをバッファするため、
+    # 標準エラーとの順番が入れ替わるのを防ぐ
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
     try:
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env
