@@ -9,8 +9,12 @@ ctx.py の出力形式を意図して変えたときは、次のコマンドで�
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
+import subprocess
+import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -23,11 +27,15 @@ EXAMPLES = KIT / "examples"
 SAMPLE_PROJECT = EXAMPLES / "sample-project"
 SAMPLE_CONTEXT = EXAMPLES / "sample-context.md"
 SAMPLE_RUN_RESULT = EXAMPLES / "sample-run-result.md"
-# examples/README.md に載せている run の実行例 (search スキルで検索)
+# LLM の回答の例 (apply-patch スキルのパッチを適用する PowerShell コマンド入り)
+SAMPLE_LLM_ANSWER = EXAMPLES / "sample-llm-answer.md"
+# examples/README.md に載せている run の実行例 (上の回答のパッチを --dry-run で確認)
 SAMPLE_RUN_COMMAND = [
     "python",
-    f"{KIT.as_posix()}/skills/search/search.py",
-    "TaskStore",
+    f"{KIT.as_posix()}/skills/apply-patch/apply.py",
+    "-f",
+    "../sample-llm-answer.md",
+    "--dry-run",
 ]
 
 
@@ -41,7 +49,7 @@ def test_sample_context_is_up_to_date(capsys: pytest.CaptureFixture[str]) -> Non
     rc = ctx.main([str(SAMPLE_PROJECT), "--no-git", "--stdout"])
     assert rc == 0
     actual = normalize(capsys.readouterr().out)
-    assert "## スキル: search" in actual
+    assert "## スキル: apply-patch" in actual
     if os.environ.get("CTX_UPDATE_EXAMPLE"):
         SAMPLE_CONTEXT.write_text(actual, encoding="utf-8", newline="\n")
     # Windows の autocrlf で CRLF になっていても比較できるよう改行をそろえる
@@ -142,3 +150,44 @@ def test_every_ctxignore_pattern_is_exercised() -> None:
     reasons = " ".join(reason for _, _, reason in CTXIGNORE_CASES)
     for pattern in patterns:
         assert pattern in reasons, f"テストされていないパターン: {pattern}"
+
+
+def test_sample_llm_answer_applies_and_tests_pass(tmp_path: Path) -> None:
+    """例の回答のパッチが、擬似プロジェクトに実際に適用でき、そのテストも通る"""
+    spec = importlib.util.spec_from_file_location(
+        "apply_patch_skill", KIT / "skills" / "apply-patch" / "apply.py"
+    )
+    assert spec and spec.loader
+    apply = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(apply)
+    exe = "apply_patch.exe" if sys.platform == "win32" else "apply_patch"
+    with zipfile.ZipFile(apply.ZIP_PATH) as zf:
+        if f"{apply.platform_key()}/{exe}" not in zf.namelist():
+            pytest.skip("この OS 用の apply_patch が zip に入っていない")
+    project = tmp_path / "sample-project"
+    shutil.copytree(SAMPLE_PROJECT, project)
+    r = subprocess.run(
+        [
+            sys.executable,
+            str(KIT / "skills" / "apply-patch" / "apply.py"),
+            "-f",
+            str(SAMPLE_LLM_ANSWER),
+        ],
+        capture_output=True,
+        cwd=project,
+    )
+    out = r.stdout.decode("utf-8", errors="replace")
+    assert r.returncode == 0, out
+    assert "Success. Updated the following files:" in out
+    assert "def remove(self, task_id: int) -> None:" in (
+        project / "src" / "todo" / "storage.py"
+    ).read_text(encoding="utf-8")
+
+    tests = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests"],
+        capture_output=True,
+        cwd=project,
+        env=dict(os.environ, PYTHONPATH=str(project / "src")),
+    )
+    assert tests.returncode == 0, tests.stdout.decode("utf-8", errors="replace")
+    assert b"5 passed" in tests.stdout

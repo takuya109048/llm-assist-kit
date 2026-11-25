@@ -6,7 +6,8 @@
 | --- | --- |
 | [`sample-project/`](sample-project/) | 取得元の擬似プロジェクト(Python の ToDo CLI + 簡易 Web ビューア) |
 | [`sample-context.md`](sample-context.md) | 実際に取得したコンテキスト(クリップボードに入る内容そのもの) |
-| [`sample-run-result.md`](sample-run-result.md) | キットの search スキルのスクリプトを `ctx.py run` で実行した結果(LLM に貼り返す内容そのもの) |
+| [`sample-llm-answer.md`](sample-llm-answer.md) | LLM の回答の例(apply-patch スキルに従った、パッチを適用する PowerShell コマンド入り) |
+| [`sample-run-result.md`](sample-run-result.md) | その回答のパッチを `ctx.py run` 経由で `--dry-run` した結果(LLM に貼り返す内容そのもの) |
 
 スキルはキットの [`skills/`](../skills/) にあるもの (プロジェクトの外) を使っています。
 キットの場所はマシンごとに違うので、例では `C:/tools/llm-assist-kit` に置いたものとして表しています。
@@ -38,11 +39,9 @@ PS> ctx --list
      180 tok  tests/test_storage.py
      100 tok  web/app.js
       49 tok  web/index.html
-       skill  git-diff  (C:/tools/llm-assist-kit/skills/git-diff/SKILL.md)
-       skill  run-tests  (C:/tools/llm-assist-kit/skills/run-tests/SKILL.md)
-       skill  search  (C:/tools/llm-assist-kit/skills/search/SKILL.md)
+       skill  apply-patch  (C:/tools/llm-assist-kit/skills/apply-patch/SKILL.md)
 
-16 ファイル / スキル 3 / 推定 2,979 トークン
+16 ファイル / スキル 1 / 推定 4,207 トークン
 ```
 
 ## `.ctxignore` の全パターン
@@ -78,23 +77,29 @@ PS> ctx --list
 
 ## スキルとスクリプト実行の流れ
 
-[`sample-context.md`](sample-context.md) の「# スキル」欄に、キットの 4 つのスキル
-(`apply-patch` / `git-diff` / `run-tests` / `search`) の `SKILL.md` が入っています。
+[`sample-context.md`](sample-context.md) の「# スキル」欄に、キットのスキル (`apply-patch`) の `SKILL.md` が入っています。
 `${SKILL_DIR}` と `${CTX}` は実際のパス (`C:/tools/llm-assist-kit/...`) に置き換わっているので、
 LLM はそのまま実行できるコマンドを示せます。スキルのスクリプトはプロジェクトの外にあるので、
 ツリーやソースコード欄には入りません。
 
 チャットでのやり取りは次のようになります。
 
-1. ユーザー: `ctx` でコピーしたコンテキストを貼り、「TaskStore はどこで使われている?」と質問
-2. LLM: search スキルに従い、実行するコマンドを示す
+1. ユーザー: `ctx` でコピーしたコンテキストを貼り、「TaskStore にタスクを削除する機能を追加して」と依頼
+2. LLM: apply-patch スキルに従い、パッチを埋め込んだ PowerShell コマンドを 1 つのコードブロックで出す
+   (回答の実例: [`sample-llm-answer.md`](sample-llm-answer.md))
+3. ユーザー: そのブロックをプロジェクトのフォルダの PowerShell に貼って実行 → パッチが適用され、結果がクリップボードに入る
+4. ユーザー: 結果をチャットに貼るか、そのまま次の依頼をする (貼らなければ、LLM は適用済みとして続ける)
 
-   ```powershell
-   python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/search/search.py TaskStore
-   ```
-3. ユーザー: プロジェクトのフォルダの PowerShell で実行 → 結果がクリップボードに入るので、チャットに貼る
-   (貼る内容の実例: [`sample-run-result.md`](sample-run-result.md))
-4. LLM: 貼られた結果をもとに回答する
+[`sample-run-result.md`](sample-run-result.md) は、その回答のパッチを `--dry-run` で確かめた結果です
+(擬似プロジェクトを書き換えないように `--dry-run` にしています)。
+
+```powershell
+cd examples/sample-project
+python C:\tools\llm-assist-kit\ctx.py run -- python C:/tools/llm-assist-kit/skills/apply-patch/apply.py -f ../sample-llm-answer.md --dry-run
+```
+
+テスト (`tests/test_example.py`) では、この回答のパッチを擬似プロジェクトのコピーに実際に適用し、
+擬似プロジェクトのテストが通ることも確認しています。
 
 ## 例の更新
 

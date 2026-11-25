@@ -349,9 +349,10 @@ def test_decode_input(data: bytes, text: str):
 
 
 def powershell_blocks() -> list[str]:
-    """SKILL.md の powershell コードブロックをすべて取り出す"""
+    """SKILL.md の、パッチを適用する powershell コードブロック (雛形と例) を取り出す"""
     body = (SKILL / "SKILL.md").read_text(encoding="utf-8")
-    return re.findall(r"```powershell\n(.*?)```", body, re.S)
+    blocks = re.findall(r"```powershell\n(.*?)```", body, re.S)
+    return [b for b in blocks if "*** Begin Patch" in b]
 
 
 def test_skill_md_command_form():

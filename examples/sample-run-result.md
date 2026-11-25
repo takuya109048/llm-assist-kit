@@ -1,19 +1,15 @@
 ## 実行結果
 
 ```powershell
-PS> python C:/tools/llm-assist-kit/skills/search/search.py TaskStore
+PS> python C:/tools/llm-assist-kit/skills/apply-patch/apply.py -f ../sample-llm-answer.md --dry-run
 ```
 
 - 終了コード: 0 (成功)
 
 ```text
-src/todo/cli.py:7: from todo.storage import TaskStore
-src/todo/cli.py:20:     store = TaskStore(Path(os.environ.get("TODO_FILE", "todo.json")))
-src/todo/storage.py:9: class TaskStore:
-tests/test_storage.py:4: from todo.storage import TaskStore
-tests/test_storage.py:8:     store = TaskStore(tmp_path / "todo.json")
-tests/test_storage.py:16:     store = TaskStore(tmp_path / "todo.json")
-tests/test_storage.py:24:         TaskStore(tmp_path / "todo.json").complete(99)
+パッチ (C:/tools/llm-assist-kit/examples/sample-project に適用):
+  更新: src/todo/storage.py
+  追加: tests/test_remove.py
 
-7 件 / 3 ファイル
+--dry-run のため適用していません
 ```
