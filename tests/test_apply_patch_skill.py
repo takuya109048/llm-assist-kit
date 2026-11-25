@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import os
 import re
 import shutil
 import subprocess
@@ -377,9 +378,12 @@ def test_stdin_pipe_utf8_with_bom(project: Path):
         input=b"\xef\xbb\xbf" + patch.encode("utf-8"),
         capture_output=True,
         cwd=project,
+        # 英語版 Windows でパイプに出すときと同じ文字コード。日本語の出力で落ちないこと
+        env=dict(os.environ, PYTHONIOENCODING="cp1252"),
     )
     assert r.returncode == 0, r.stdout.decode("utf-8", errors="replace")
     assert (project / "日本語.txt").read_text(encoding="utf-8") == "こんにちは\n"
+    assert "追加: 日本語.txt" in r.stdout.decode("utf-8")
 
 
 def available_powershells() -> list[str]:

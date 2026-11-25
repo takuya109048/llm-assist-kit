@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import hashlib
+import io
 import os
 import platform
 import re
@@ -261,7 +262,18 @@ class Backup:
 # ---------------------------------------------------------------------------
 
 
+def use_utf8_output() -> None:
+    """出力を UTF-8 にする (英語版 Windows でパイプに出すと cp1252 になり、日本語で落ちるため)"""
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except ValueError:
+                pass
+
+
 def main(argv: list[str]) -> int:
+    use_utf8_output()
     ap = argparse.ArgumentParser(prog="apply.py", description=__doc__.split("\n")[0])
     ap.add_argument(
         "-f", "--file", help="パッチを読むファイル (- で標準入力。既定: クリップボード)"
