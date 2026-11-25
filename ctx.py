@@ -850,8 +850,12 @@ ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07")
 
 
 def decode_output(data: bytes) -> str:
-    """UTF-8 → OS の既定 (日本語 Windows なら cp932) の順に試す"""
-    for enc in ("utf-8", locale.getpreferredencoding(False), "cp932"):
+    """UTF-8 → cp932 → OS の既定エンコーディングの順に試す
+
+    cp1252 のような 1 バイト文字コードはどんなバイト列でもエラーなく読めてしまうので、
+    OS の既定は最後に試す (英語版 Windows で cp932 の出力が化けるのを防ぐ)
+    """
+    for enc in ("utf-8", "cp932", locale.getpreferredencoding(False)):
         try:
             text = data.decode(enc)
             break

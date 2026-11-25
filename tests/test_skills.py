@@ -262,6 +262,14 @@ def test_decode_output(data: bytes, expected: str):
     assert ctx.decode_output(data) == expected
 
 
+def test_decode_output_cp932_on_single_byte_locale(monkeypatch: pytest.MonkeyPatch):
+    """英語版 Windows (既定 cp1252) でも cp932 の出力を化けさせない"""
+    monkeypatch.setattr(ctx.locale, "getpreferredencoding", lambda _=True: "cp1252")
+    assert ctx.decode_output("日本語".encode("cp932")) == "日本語"
+    # UTF-8 でも cp932 でも読めないものは OS の既定で読む
+    assert ctx.decode_output("café".encode("cp1252")) == "café"
+
+
 # ---------------------------------------------------------------------------
 # run: 実行
 # ---------------------------------------------------------------------------
