@@ -143,7 +143,7 @@ def test_zip_binary_none_without_zip_or_platform(cache: Path):
 def test_marp_command_prefers_zip_then_marp_then_npx(
     cache: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    found = {"marp": None, "npx": "/bin/npx"}
+    found: dict[str, str | None] = {"marp": None, "npx": "/bin/npx"}
     monkeypatch.setattr(build.shutil, "which", lambda name: found[name])
     assert build.marp_command() == ["/bin/npx", "--yes", "@marp-team/marp-cli"]
 
