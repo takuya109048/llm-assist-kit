@@ -50,6 +50,14 @@ python install.py
   (`python install.py --set-execution-policy` で、現在のユーザーだけ `RemoteSigned` にもできます)
 - `python install.py --uninstall` で外せます。`--print` で書き込む内容だけ表示します
 - 関数を追加するときは、`install.py` の `FUNCTIONS` に 1 行足して `python install.py` を実行し直します
+  (関数の中身のスクリプトは `commands/` に置きます)
+
+登録される関数:
+
+| 関数 | 内容 |
+| --- | --- |
+| `ctx` | プロジェクトのコンテキストをクリップボードへ。`ctx run -- <コマンド>` で実行結果をコピー |
+| `addcommit` | `git add -A` と `git commit -m` をまとめて行う。`addcommit メッセージ` (空白で区切った語はつなげて 1 つのメッセージにする) |
 
 ### 使い方 (PowerShell、プロジェクトのフォルダで)
 

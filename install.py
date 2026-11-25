@@ -39,6 +39,11 @@ FUNCTIONS = [
         "ctx.py",
         "プロジェクトのコンテキストをクリップボードへ (ctx run -- ... も)",
     ),
+    PSFunction(
+        "addcommit",
+        "commands/addcommit.py",
+        "git add -A と git commit -m をまとめて行う (addcommit メッセージ)",
+    ),
 ]
 
 BEGIN_MARK = "# >>> llm-assist-kit >>>"

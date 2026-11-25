@@ -32,7 +32,8 @@ Run everything inside the activated `.venv`, or call the tools through
 - Register the PowerShell functions (`ctx`, ...) in the user's profiles:
   `python install.py` (`--print` shows the block, `--uninstall` removes it).
   To add a function, add a `PSFunction` to `FUNCTIONS` in `install.py`; it
-  must point to a standard-library-only Python script in this kit.
+  must point to a standard-library-only Python script in this kit. Put new
+  function scripts in `commands/` (e.g. `commands/addcommit.py`).
 
 ## Create new projects
 
