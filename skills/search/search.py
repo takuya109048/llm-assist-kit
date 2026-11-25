@@ -76,7 +76,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("-g", "--glob", action="append", default=[], help="対象ファイル")
     ap.add_argument("-C", "--context", type=int, default=0, help="前後の行数")
     ap.add_argument("--max", type=int, default=200, help="最大件数")
-    args = ap.parse_args(argv)
+    # オプションの後ろにフォルダを書いても受け付ける (Python 3.12 以前の argparse 対策)
+    args = ap.parse_intermixed_args(argv)
 
     source = re.escape(args.pattern) if args.fixed else args.pattern
     try:
