@@ -1,88 +1,88 @@
-# Python Project Rules
+# Python プロジェクトのルール
 
-## Manage packages
+## パッケージ管理
 
-This project uses pip and the standard-library `venv`. Do not use uv, pip-tools,
-poetry, or conda. There is no lockfile.
+このプロジェクトは pip と標準ライブラリの `venv` を使います。uv、pip-tools、
+poetry、conda は使わないでください。ロックファイルはありません。
 
-- Create the environment: `python -m venv .venv`
-- Activate it: `source .venv/bin/activate` (Windows: `.venv\Scripts\activate`)
-- Install the project and dev tools (editable): `pip install -e ".[dev]"`
-- Runtime dependencies live in `[project] dependencies` in `pyproject.toml`
-- Dev tools (pytest, ruff, pyrefly) live in `[project.optional-dependencies] dev`
-- After changing dependencies in `pyproject.toml`, re-run `pip install -e ".[dev]"`
-- `ctx.py` must stay a single file that uses only the standard library: users run
-  it on other projects without installing anything. Do not add runtime dependencies.
-- Skills live in `skills/<name>/` (`SKILL.md` plus optional scripts), not in the
-  target projects. Skill scripts also use only the standard library. In `SKILL.md`,
-  write paths as `${SKILL_DIR}/...` and the runner as `python ${CTX} run -- ...`.
-- `skills/apply-patch/apply_patch.zip` holds prebuilt codex-rs `apply_patch` binaries.
-  Never edit it by hand; rebuild it with `python tools/build_apply_patch.py`
-  (needs rustup, git and mingw-w64). Do not commit `.build/` or `skills/apply-patch/.bin/`.
+- 環境を作る: `python -m venv .venv`
+- 有効化する: `source .venv/bin/activate` (Windows: `.venv\Scripts\activate`)
+- プロジェクトと開発ツールを (editable で) インストールする: `pip install -e ".[dev]"`
+- 実行時の依存関係は `pyproject.toml` の `[project] dependencies` に書く
+- 開発ツール (pytest、ruff、pyrefly) は `[project.optional-dependencies] dev` に書く
+- `pyproject.toml` の依存関係を変えたら、`pip install -e ".[dev]"` を再実行する
+- `ctx.py` は標準ライブラリだけを使う単一ファイルのままにすること。ユーザーは
+  何もインストールせずに他のプロジェクトで実行します。実行時の依存関係を追加しないこと。
+- スキルは対象プロジェクトではなく `skills/<name>/` (`SKILL.md` と任意のスクリプト) に
+  置く。スキルのスクリプトも標準ライブラリだけを使う。`SKILL.md` では、パスを
+  `${SKILL_DIR}/...`、実行コマンドを `python ${CTX} run -- ...` と書く。
+- `skills/apply-patch/apply_patch.zip` にはビルド済みの codex-rs `apply_patch` バイナリが
+  入っている。手で編集せず、`python tools/build_apply_patch.py` で再ビルドすること
+  (rustup、git、mingw-w64 が必要)。`.build/` と `skills/apply-patch/.bin/` はコミットしない。
 
-## Run code
+## コードの実行
 
-Run everything inside the activated `.venv`, or call the tools through
-`.venv/bin/` (for example `.venv/bin/pytest`). Do not install packages globally.
+すべて有効化した `.venv` の中で実行するか、`.venv/bin/` 経由でツールを呼ぶ
+(例: `.venv/bin/pytest`)。パッケージをグローバルにインストールしないこと。
 
-- Run a script: `python script.py`
-- Run a module: `python -m module_name`
-- Run the tool: `python ctx.py --list` (preview) or `python ctx.py --stdout`
-- Run a command and copy its result for the LLM: `python ctx.py run -- <command>`
-- Register the PowerShell functions (`ctx`, ...) in the user's profiles:
-  `python install.py` (`--print` shows the block, `--uninstall` removes it).
-  To add a function, add a `PSFunction` to `FUNCTIONS` in `install.py`; it
-  must point to a standard-library-only Python script in this kit. Put new
-  function scripts in `commands/` (e.g. `commands/addcommit.py`).
+- スクリプトを実行する: `python script.py`
+- モジュールを実行する: `python -m module_name`
+- ツールを実行する: `python ctx.py --list` (プレビュー) または `python ctx.py --stdout`
+- コマンドを実行し、その結果を LLM 用にコピーする: `python ctx.py run -- <command>`
+- PowerShell 関数 (`ctx` など) をユーザーのプロファイルに登録する:
+  `python install.py` (`--print` でブロックを表示、`--uninstall` で削除)。
+  関数を追加するには、`install.py` の `FUNCTIONS` に `PSFunction` を追加する。
+  関数はこのキット内の標準ライブラリのみの Python スクリプトを指すこと。新しい
+  関数用スクリプトは `commands/` に置く (例: `commands/addcommit.py`)。
 
-## Create new projects
+## 新規プロジェクトの作成
 
-- Always use `pyproject.toml` for metadata (PEP 621). Never create `setup.py`,
-  `setup.cfg`, or `requirements.txt`.
-- Build backend: setuptools (`setuptools.build_meta`)
+- メタデータには必ず `pyproject.toml` を使う (PEP 621)。`setup.py`、
+  `setup.cfg`、`requirements.txt` は決して作らない。
+- ビルドバックエンド: setuptools (`setuptools.build_meta`)
 
-## Test code
+## テスト
 
-- Framework: pytest
-- Run tests: `pytest`
-- Test files go in `tests/` at the project root
-- Test file naming: `test_*.py`
-- Test function naming: `test_*`
-- No `__init__.py` needed in `tests/`
-- Regenerate `examples/sample-context.md` and `examples/sample-run-result.md`
-  after an intended output change:
+- フレームワーク: pytest
+- テストを実行する: `pytest`
+- テストファイルはプロジェクトルートの `tests/` に置く
+- テストファイル名: `test_*.py`
+- テスト関数名: `test_*`
+- `tests/` に `__init__.py` は不要
+- 意図した出力の変更後は、`examples/sample-context.md` と `examples/sample-run-result.md`
+  を再生成する:
   `CTX_UPDATE_EXAMPLE=1 pytest tests/test_example.py`
-- Windows-only behavior (the clipboard) is tested on the `windows-latest` CI job;
-  keep that job in the matrix
+- Windows 固有の動作 (クリップボード) は `windows-latest` の CI ジョブでテストする。
+  このジョブはマトリクスから外さないこと
 
-## Configure continuous integration
+## 継続的インテグレーションの設定
 
-Use `actions/setup-python` in GitHub Actions, then `pip install -e ".[dev]"`.
+GitHub Actions では `actions/setup-python` を使い、その後 `pip install -e ".[dev]"` を実行する。
 
-## Lint and format code
+## リントとフォーマット
 
-- Tool: ruff (handles both linting and formatting)
-- Lint: `ruff check .`
-- Lint and auto-fix: `ruff check --fix .`
-- Format: `ruff format .`
-- Check formatting: `ruff format --check .`
-- Configuration lives in `pyproject.toml` under `[tool.ruff]`
+- ツール: ruff (リントとフォーマットの両方を担当)
+- リント: `ruff check .`
+- リントと自動修正: `ruff check --fix .`
+- フォーマット: `ruff format .`
+- フォーマットの確認: `ruff format --check .`
+- 設定は `pyproject.toml` の `[tool.ruff]` に書く
 
-## Check types
+## 型チェック
 
-- Tool: pyrefly
-- Run: `pyrefly check`
-- Configuration lives in `pyproject.toml` under `[tool.pyrefly]`
+- ツール: pyrefly
+- 実行: `pyrefly check`
+- 設定は `pyproject.toml` の `[tool.pyrefly]` に書く
 
-## Follow code style
+## コードスタイル
 
-- Follow ruff's defaults for formatting (88 char line length, double quotes, spaces)
-- Import sorting is handled by ruff (`isort` rules enabled via `select = ["I"]`)
-- Do not add `# type: ignore` comments without an error code
+- フォーマットは ruff のデフォルトに従う (1 行 88 文字、ダブルクォート、スペース)
+- import の並び替えは ruff が行う (`select = ["I"]` で `isort` ルールを有効化)
+- エラーコードなしの `# type: ignore` コメントを追加しない
 
-## Avoid these practices
+## 避けること
 
-- Do not use uv (`uv`, `uvx`, `uv.lock`, `uv_build`).
-- Do not install packages globally or outside `.venv`.
-- Do not create `requirements.txt` for dependency management. Use `pyproject.toml`.
-- Do not run `python setup.py` commands.
+- uv (`uv`、`uvx`、`uv.lock`、`uv_build`) を使わない。
+- パッケージをグローバルや `.venv` の外にインストールしない。
+- 依存関係の管理に `requirements.txt` を作らない。`pyproject.toml` を使う。
+- `python setup.py` コマンドを実行しない。
