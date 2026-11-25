@@ -2,7 +2,8 @@
 
 使い方 (プロジェクトのフォルダで):
     python apply.py              # クリップボードのパッチを適用
-    python apply.py -f patch.txt # ファイルから (- で標準入力)
+    python apply.py -f patch.txt # ファイルから
+    ... | python apply.py -f -   # 標準入力から (PowerShell のヒアストリングを渡す)
     python apply.py --dry-run    # 変更されるファイルの一覧だけ表示
 
 LLM の回答をまるごとコピーしてもよい: `*** Begin Patch` 〜 `*** End Patch` の部分だけを取り出す。
@@ -14,6 +15,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import hashlib
+import io
 import os
 import platform
 import re
@@ -102,8 +104,22 @@ LABELS = {
 
 
 # ---------------------------------------------------------------------------
-# クリップボードの読み取り
+# 入力の読み取り
 # ---------------------------------------------------------------------------
+
+
+def decode_input(data: bytes) -> str:
+    """標準入力のバイト列を文字列にする
+
+    PowerShell からパイプで渡すと、$OutputEncoding に応じて UTF-8 (BOM 付きのことも) や
+    cp932 で届く。OS の既定の文字コードに頼らず、UTF-8 → cp932 の順に試す
+    """
+    for enc in ("utf-8-sig", "cp932"):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
 
 
 def read_clipboard() -> str:
@@ -246,7 +262,18 @@ class Backup:
 # ---------------------------------------------------------------------------
 
 
+def use_utf8_output() -> None:
+    """出力を UTF-8 にする (英語版 Windows でパイプに出すと cp1252 になり、日本語で落ちるため)"""
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except ValueError:
+                pass
+
+
 def main(argv: list[str]) -> int:
+    use_utf8_output()
     ap = argparse.ArgumentParser(prog="apply.py", description=__doc__.split("\n")[0])
     ap.add_argument(
         "-f", "--file", help="パッチを読むファイル (- で標準入力。既定: クリップボード)"
@@ -258,7 +285,7 @@ def main(argv: list[str]) -> int:
 
     try:
         if args.file == "-":
-            text = sys.stdin.read()
+            text = decode_input(sys.stdin.buffer.read())
         elif args.file:
             text = Path(args.file).read_text(encoding="utf-8-sig")
         else:

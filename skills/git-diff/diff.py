@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import io
 import shutil
 import subprocess
 import sys
@@ -22,7 +23,18 @@ def section(title: str, body: str) -> None:
     print()
 
 
+def use_utf8_output() -> None:
+    """出力を UTF-8 にする (英語版 Windows でパイプに出すと cp1252 になり、日本語で落ちるため)"""
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            try:
+                stream.reconfigure(encoding="utf-8")
+            except ValueError:
+                pass
+
+
 def main(argv: list[str]) -> int:
+    use_utf8_output()
     if not shutil.which("git"):
         print("git が見つかりません")
         return 1

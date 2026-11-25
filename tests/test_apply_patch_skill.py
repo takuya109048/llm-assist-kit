@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import os
+import re
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -196,7 +199,8 @@ def test_reads_clipboard_by_default(
 def test_reads_stdin(
     project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
-    monkeypatch.setattr(sys, "stdin", io.StringIO(PATCH))
+    stdin = io.TextIOWrapper(io.BytesIO(PATCH.encode("utf-8")), encoding="utf-8")
+    monkeypatch.setattr(sys, "stdin", stdin)
     assert apply.main(["-f", "-", "--dry-run"]) == 0
     assert "追加: a.txt" in capsys.readouterr().out
 
@@ -325,3 +329,104 @@ def test_through_ctx_run(project: Path):
     assert "追加: a.txt" in out
     assert "Success. Updated the following files:\nA a.txt" in out
     assert (project / "a.txt").read_text(encoding="utf-8") == "hello\n"
+
+
+# ---------------------------------------------------------------------------
+# PowerShell のコマンドとして実行する (SKILL.md で LLM に出させる形)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("data", "text"),
+    [
+        ("日本語\n".encode(), "日本語\n"),
+        ("﻿日本語\r\n".encode(), "日本語\r\n"),  # BOM 付き UTF-8
+        ("日本語".encode("cp932"), "日本語"),
+    ],
+)
+def test_decode_input(data: bytes, text: str):
+    assert apply.decode_input(data) == text
+
+
+def powershell_blocks() -> list[str]:
+    """SKILL.md の powershell コードブロックをすべて取り出す"""
+    body = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    return re.findall(r"```powershell\n(.*?)```", body, re.S)
+
+
+def test_skill_md_command_form():
+    """SKILL.md の雛形と例が、同じ形のコマンドになっている"""
+    blocks = powershell_blocks()
+    assert len(blocks) == 2  # 雛形と例
+    for block in blocks:
+        lines = block.rstrip("\n").split("\n")
+        assert lines[0] == "$OutputEncoding = [System.Text.UTF8Encoding]::new($false)"
+        assert lines[1] == "@'"
+        assert lines[2] == "*** Begin Patch"
+        assert lines[-2] == "*** End Patch"
+        assert lines[-1] == (
+            "'@ | python ${CTX} run -- python ${SKILL_DIR}/apply.py -f -"
+        )
+
+
+@needs_binary
+def test_stdin_pipe_utf8_with_bom(project: Path):
+    """PowerShell が BOM 付き UTF-8・CRLF で渡しても適用できる"""
+    patch = "*** Begin Patch\r\n*** Add File: 日本語.txt\r\n+こんにちは\r\n*** End Patch\r\n"
+    r = subprocess.run(
+        [sys.executable, str(SKILL / "apply.py"), "-f", "-"],
+        input=b"\xef\xbb\xbf" + patch.encode("utf-8"),
+        capture_output=True,
+        cwd=project,
+        # 英語版 Windows でパイプに出すときと同じ文字コード。日本語の出力で落ちないこと
+        env=dict(os.environ, PYTHONIOENCODING="cp1252"),
+    )
+    assert r.returncode == 0, r.stdout.decode("utf-8", errors="replace")
+    assert (project / "日本語.txt").read_text(encoding="utf-8") == "こんにちは\n"
+    assert "追加: 日本語.txt" in r.stdout.decode("utf-8")
+
+
+def available_powershells() -> list[str]:
+    return [ps for ps in ("powershell", "pwsh") if shutil.which(ps)]
+
+
+@needs_binary
+@pytest.mark.parametrize("shell", available_powershells() or ["(none)"])
+def test_skill_md_example_in_powershell(shell: str, project: Path, tmp_path: Path):
+    """SKILL.md の例のコマンドを、実際の PowerShell に貼ったのと同じように実行する"""
+    if shell == "(none)":
+        pytest.skip("PowerShell が無い")
+    if not shutil.which("python"):
+        pytest.skip("python コマンドが無い")
+    (project / "src").mkdir()
+    (project / "src" / "app.py").write_text(
+        'def greet(name):\n    print("Hi " + name)\n', encoding="utf-8"
+    )
+    (project / "old.txt").write_text("old\n", encoding="utf-8")
+
+    example = powershell_blocks()[1]
+    ctx_py = (SKILL.parent.parent / "ctx.py").as_posix()
+    script = (
+        example.replace(" run -- ", " run --stdout -- ")
+        .replace("${CTX}", ctx_py)
+        .replace("${SKILL_DIR}", SKILL.as_posix())
+    )
+    # コンソールに貼ったときと同じく、PowerShell に Unicode のまま読ませる
+    ps1 = tmp_path / "paste.ps1"
+    ps1.write_text(script, encoding="utf-8-sig")
+    r = subprocess.run(
+        [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps1)],
+        capture_output=True,
+        cwd=project,
+    )
+    out = r.stdout.decode("utf-8", errors="replace").replace("\r\n", "\n")
+    assert r.returncode == 0, out + r.stderr.decode("utf-8", errors="replace")
+    assert "- 終了コード: 0 (成功)" in out
+    assert "Success. Updated the following files:" in out
+    assert (project / "src" / "app.py").read_text(encoding="utf-8") == (
+        'def greet(name):\n    print(f"こんにちは、{name} さん")\n'
+    )
+    assert (project / "docs" / "usage.md").read_text(encoding="utf-8") == (
+        "# 使い方\n\n`python src/app.py` で起動します。\n"
+    )
+    assert not (project / "old.txt").exists()

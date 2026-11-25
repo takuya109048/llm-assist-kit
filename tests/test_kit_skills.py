@@ -188,3 +188,22 @@ def test_diff_outside_git(tmp_path: Path):
     code, out = run_script("git-diff/diff.py", cwd=tmp_path)
     assert code == 1
     assert "git" in out
+
+
+@pytest.mark.parametrize(
+    ("script", "args"),
+    [("search/search.py", ["foo"]), ("git-diff/diff.py", [])],
+)
+def test_scripts_print_utf8_on_single_byte_console(
+    script: str, args: list[str], tree: Path
+):
+    """英語版 Windows でパイプに出すとき (cp1252) も日本語の出力で落ちない"""
+    r = subprocess.run(
+        [sys.executable, str(KIT_SKILLS / script), *args],
+        capture_output=True,
+        cwd=tree,
+        env=dict(ctx.os.environ, PYTHONIOENCODING="cp1252"),
+    )
+    out = (r.stdout + r.stderr).decode("utf-8")
+    assert "Traceback" not in out
+    assert "UnicodeEncodeError" not in out
