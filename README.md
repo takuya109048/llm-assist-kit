@@ -58,6 +58,7 @@ python install.py
 | --- | --- |
 | `ctx` | プロジェクトのコンテキストをクリップボードへ。`ctx run -- <コマンド>` で実行結果をコピー |
 | `addcommit` | `git add -A` と `git commit -m` をまとめて行う。`addcommit メッセージ` (空白で区切った語はつなげて 1 つのメッセージにする) |
+| `reset` | `git reset --hard HEAD` と `git clean -fd` をまとめて行い、最後のコミットの状態に戻す。消える内容を表示して確認してから実行 (`reset -y` で確認なし)。`.gitignore` で無視しているファイルは残る |
 
 ### 使い方 (PowerShell、プロジェクトのフォルダで)
 
