@@ -29,6 +29,10 @@ Run everything inside the activated `.venv`, or call the tools through
 - Run a module: `python -m module_name`
 - Run the tool: `python ctx.py --list` (preview) or `python ctx.py --stdout`
 - Run a command and copy its result for the LLM: `python ctx.py run -- <command>`
+- Register the PowerShell functions (`ctx`, ...) in the user's profiles:
+  `python install.py` (`--print` shows the block, `--uninstall` removes it).
+  To add a function, add a `PSFunction` to `FUNCTIONS` in `install.py`; it
+  must point to a standard-library-only Python script in this kit.
 
 ## Create new projects
 

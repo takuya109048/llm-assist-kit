@@ -33,5 +33,5 @@ select = ["E", "F", "I"]
 ignore = ["E501"]
 
 [tool.pyrefly]
-project-includes = ["ctx.py", "tests", "skills", "tools"]
+project-includes = ["ctx.py", "install.py", "tests", "skills", "tools"]
 search-path = ["."]
