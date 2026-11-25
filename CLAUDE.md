@@ -19,6 +19,9 @@ poetry、conda は使わないでください。ロックファイルはあり�
 - `skills/apply-patch/apply_patch.zip` にはビルド済みの codex-rs `apply_patch` バイナリが
   入っている。手で編集せず、`python tools/build_apply_patch.py` で再ビルドすること
   (rustup、git、mingw-w64 が必要)。`.build/` と `skills/apply-patch/.bin/` はコミットしない。
+- `skills/marp-slides/marp.zip` には Marp CLI の単体版 (公式リリースの Windows 用 `marp.exe`) が
+  入っている。手で編集せず、`python tools/build_marp_zip.py` で作り直すこと (公開されている
+  SHA-256 と照合する)。`skills/marp-slides/.bin/` はコミットしない。
 
 ## コードの実行
 
