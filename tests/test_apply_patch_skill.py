@@ -348,18 +348,23 @@ def test_decode_input(data: bytes, text: str):
     assert apply.decode_input(data) == text
 
 
-def powershell_blocks() -> list[str]:
-    """SKILL.md の、パッチを適用する powershell コードブロック (雛形と例) を取り出す"""
+def powershell_blocks() -> list[tuple[str, str]]:
+    """SKILL.md の、パッチを適用する powershell コードブロック (雛形と例) を
+    (囲みのバッククォート, 中身) で取り出す。囲みは ``` 以上の任意の長さ"""
     body = (SKILL / "SKILL.md").read_text(encoding="utf-8")
-    blocks = re.findall(r"```powershell\n(.*?)```", body, re.S)
-    return [b for b in blocks if "*** Begin Patch" in b]
+    blocks = re.findall(r"(?m)^(`{3,})powershell\n(.*?)^\1$", body, re.S)
+    return [(fence, b) for fence, b in blocks if "*** Begin Patch" in b]
+
+
+def longest_backtick_run(text: str) -> int:
+    return max((len(m) for m in re.findall(r"`+", text)), default=0)
 
 
 def test_skill_md_command_form():
     """SKILL.md の雛形と例が、同じ形のコマンドになっている"""
     blocks = powershell_blocks()
-    assert len(blocks) == 2  # 雛形と例
-    for block in blocks:
+    assert len(blocks) == 1 + len(EXAMPLES)  # 雛形と例
+    for _, block in blocks:
         lines = block.rstrip("\n").split("\n")
         assert lines[0] == "$OutputEncoding = [System.Text.UTF8Encoding]::new($false)"
         assert lines[1] == "@'"
@@ -368,6 +373,74 @@ def test_skill_md_command_form():
         assert lines[-1] == (
             "'@ | python ${CTX} run -- python ${SKILL_DIR}/apply.py -f -"
         )
+
+
+def test_skill_md_fences_are_longer_than_contents():
+    """コードブロックの囲みは、中にある最長のバッククォートの連続より長い
+
+    (囲みが短いと、プラットフォームによってはコードブロックが途中で切れる)
+    """
+    blocks = powershell_blocks()
+    assert any(longest_backtick_run(b) >= 3 for _, b in blocks), (
+        "中に ``` を含む例 (Markdown の修正) が無い"
+    )
+    for fence, block in blocks:
+        assert len(fence) > longest_backtick_run(block), block[:80]
+    body = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    assert "中にある最長の連続より 1 つ多く" in body
+
+
+# SKILL.md の例ごとに: (適用前のファイル, 適用後に期待する内容 (None は削除))
+EXAMPLES: list[tuple[dict[str, str], dict[str, str | None]]] = [
+    (
+        {
+            "src/app.py": 'def greet(name):\n    print("Hi " + name)\n',
+            "old.txt": "old\n",
+        },
+        {
+            "src/app.py": 'def greet(name):\n    print(f"こんにちは、{name} さん")\n',
+            "docs/usage.md": "# 使い方\n\n`python src/app.py` で起動します。\n",
+            "old.txt": None,
+        },
+    ),
+    (
+        {"README.md": "# todo-cli\n\nToDo 管理ツールです。\n"},
+        {
+            "README.md": (
+                "# todo-cli\n\n## インストール\n\n```bash\npip install -e .\n```\n"
+                "\nToDo 管理ツールです。\n"
+            ),
+        },
+    ),
+]
+
+
+def prepare(project: Path, files: dict[str, str]) -> None:
+    for rel, content in files.items():
+        (project / rel).parent.mkdir(parents=True, exist_ok=True)
+        (project / rel).write_text(content, encoding="utf-8")
+
+
+def check(project: Path, expected: dict[str, str | None]) -> None:
+    for rel, content in expected.items():
+        if content is None:
+            assert not (project / rel).exists(), rel
+        else:
+            assert (project / rel).read_text(encoding="utf-8") == content, rel
+
+
+@needs_binary
+@pytest.mark.parametrize("index", range(len(EXAMPLES)))
+def test_skill_md_examples_apply(
+    index: int, project: Path, capsys: pytest.CaptureFixture[str]
+):
+    """SKILL.md の例のパッチ (ヒアストリングの中身) が、そのまま適用できる"""
+    before, after = EXAMPLES[index]
+    prepare(project, before)
+    _, block = powershell_blocks()[1 + index]
+    code, out = run_apply(capsys, block)
+    assert code == 0, out
+    check(project, after)
 
 
 @needs_binary
@@ -392,20 +465,20 @@ def available_powershells() -> list[str]:
 
 
 @needs_binary
+@pytest.mark.parametrize("index", range(len(EXAMPLES)))
 @pytest.mark.parametrize("shell", available_powershells() or ["(none)"])
-def test_skill_md_example_in_powershell(shell: str, project: Path, tmp_path: Path):
+def test_skill_md_example_in_powershell(
+    shell: str, index: int, project: Path, tmp_path: Path
+):
     """SKILL.md の例のコマンドを、実際の PowerShell に貼ったのと同じように実行する"""
     if shell == "(none)":
         pytest.skip("PowerShell が無い")
     if not shutil.which("python"):
         pytest.skip("python コマンドが無い")
-    (project / "src").mkdir()
-    (project / "src" / "app.py").write_text(
-        'def greet(name):\n    print("Hi " + name)\n', encoding="utf-8"
-    )
-    (project / "old.txt").write_text("old\n", encoding="utf-8")
+    before, after = EXAMPLES[index]
+    prepare(project, before)
 
-    example = powershell_blocks()[1]
+    _, example = powershell_blocks()[1 + index]
     ctx_py = (SKILL.parent.parent / "ctx.py").as_posix()
     script = (
         example.replace(" run -- ", " run --stdout -- ")
@@ -424,10 +497,4 @@ def test_skill_md_example_in_powershell(shell: str, project: Path, tmp_path: Pat
     assert r.returncode == 0, out + r.stderr.decode("utf-8", errors="replace")
     assert "- 終了コード: 0 (成功)" in out
     assert "Success. Updated the following files:" in out
-    assert (project / "src" / "app.py").read_text(encoding="utf-8") == (
-        'def greet(name):\n    print(f"こんにちは、{name} さん")\n'
-    )
-    assert (project / "docs" / "usage.md").read_text(encoding="utf-8") == (
-        "# 使い方\n\n`python src/app.py` で起動します。\n"
-    )
-    assert not (project / "old.txt").exists()
+    check(project, after)
