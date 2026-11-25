@@ -98,10 +98,15 @@ my-project/
 
 Markdown 内に ``` を含むファイルは、より長いフェンス (````) で囲むので崩れません。
 
-### テスト
+### 開発
+
+開発ルールは [CLAUDE.md](CLAUDE.md) を参照(pip + venv、pytest、ruff、pyrefly)。
 
 ```powershell
-python -m unittest discover -s tests -v
+python -m venv .venv
+.venv\Scripts\activate          # macOS / Linux: source .venv/bin/activate
+pip install -e ".[dev]"
+ruff check . ; ruff format --check . ; pyrefly check ; pytest
 ```
 
 GitHub Actions で Windows / macOS / Linux × Python 3.11 / 3.13 を実行します。

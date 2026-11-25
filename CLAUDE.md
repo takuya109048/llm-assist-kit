@@ -1,0 +1,74 @@
+# Python Project Rules
+
+## Manage packages
+
+This project uses pip and the standard-library `venv`. Do not use uv, pip-tools,
+poetry, or conda. There is no lockfile.
+
+- Create the environment: `python -m venv .venv`
+- Activate it: `source .venv/bin/activate` (Windows: `.venv\Scripts\activate`)
+- Install the project and dev tools (editable): `pip install -e ".[dev]"`
+- Runtime dependencies live in `[project] dependencies` in `pyproject.toml`
+- Dev tools (pytest, ruff, pyrefly) live in `[project.optional-dependencies] dev`
+- After changing dependencies in `pyproject.toml`, re-run `pip install -e ".[dev]"`
+- `ctx.py` must stay a single file that uses only the standard library: users copy
+  it into other projects and run it without installing anything. Do not add
+  runtime dependencies.
+
+## Run code
+
+Run everything inside the activated `.venv`, or call the tools through
+`.venv/bin/` (for example `.venv/bin/pytest`). Do not install packages globally.
+
+- Run a script: `python script.py`
+- Run a module: `python -m module_name`
+- Run the tool: `python ctx.py --list` (preview) or `python ctx.py --stdout`
+
+## Create new projects
+
+- Always use `pyproject.toml` for metadata (PEP 621). Never create `setup.py`,
+  `setup.cfg`, or `requirements.txt`.
+- Build backend: setuptools (`setuptools.build_meta`)
+
+## Test code
+
+- Framework: pytest
+- Run tests: `pytest`
+- Test files go in `tests/` at the project root
+- Test file naming: `test_*.py`
+- Test function naming: `test_*`
+- No `__init__.py` needed in `tests/`
+- Windows-only behavior (the clipboard) is tested on the `windows-latest` CI job;
+  keep that job in the matrix
+
+## Configure continuous integration
+
+Use `actions/setup-python` in GitHub Actions, then `pip install -e ".[dev]"`.
+
+## Lint and format code
+
+- Tool: ruff (handles both linting and formatting)
+- Lint: `ruff check .`
+- Lint and auto-fix: `ruff check --fix .`
+- Format: `ruff format .`
+- Check formatting: `ruff format --check .`
+- Configuration lives in `pyproject.toml` under `[tool.ruff]`
+
+## Check types
+
+- Tool: pyrefly
+- Run: `pyrefly check`
+- Configuration lives in `pyproject.toml` under `[tool.pyrefly]`
+
+## Follow code style
+
+- Follow ruff's defaults for formatting (88 char line length, double quotes, spaces)
+- Import sorting is handled by ruff (`isort` rules enabled via `select = ["I"]`)
+- Do not add `# type: ignore` comments without an error code
+
+## Avoid these practices
+
+- Do not use uv (`uv`, `uvx`, `uv.lock`, `uv_build`).
+- Do not install packages globally or outside `.venv`.
+- Do not create `requirements.txt` for dependency management. Use `pyproject.toml`.
+- Do not run `python setup.py` commands.
