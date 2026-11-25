@@ -23,6 +23,7 @@ Run everything inside the activated `.venv`, or call the tools through
 - Run a script: `python script.py`
 - Run a module: `python -m module_name`
 - Run the tool: `python ctx.py --list` (preview) or `python ctx.py --stdout`
+- Run a command and copy its result for the LLM: `python ctx.py run -- <command>`
 
 ## Create new projects
 
@@ -38,7 +39,8 @@ Run everything inside the activated `.venv`, or call the tools through
 - Test file naming: `test_*.py`
 - Test function naming: `test_*`
 - No `__init__.py` needed in `tests/`
-- Regenerate `examples/sample-context.md` after an intended output change:
+- Regenerate `examples/sample-context.md` and `examples/sample-run-result.md`
+  after an intended output change:
   `CTX_UPDATE_EXAMPLE=1 pytest tests/test_example.py`
 - Windows-only behavior (the clipboard) is tested on the `windows-latest` CI job;
   keep that job in the matrix

@@ -15,12 +15,64 @@
 - コードを変更するときは、ファイルパスと変更後のコード全体を示す
 - このメッセージには「了解しました」とだけ返し、次の依頼を待つ
 
+# スキル
+
+このプロジェクトには、以下のスキル (作業手順と補助スクリプト) があります。
+依頼内容に合うスキルがあれば、その手順に従ってください。
+
+- あなたはスクリプトやコマンドを直接実行できません。実行が必要なときは、
+  ユーザーが PowerShell で実行するコマンドを powershell のコードブロックで示し、実行を依頼してください。
+- 実行結果を見る必要があるときは、コマンドの前に `python ctx.py run --` を付けてください。
+  ユーザーが実行すると、コマンド・終了コード・出力が「## 実行結果」の形でクリップボードにコピーされ、
+  このチャットに貼り付けられます。例:
+
+  ```powershell
+  python ctx.py run -- python -m pytest -q
+  ```
+- 結果が貼られるまで、実行結果を推測で決めつけないでください。
+
+## スキル: run-tests
+
+- 説明: コードを変更したら、ユーザーにテストを実行してもらい結果を確認する
+- フォルダ: `.ctx/skills/run-tests/`
+
+コードの変更を提案したら、最後に必ず次のコマンドの実行をユーザーに依頼してください。
+
+```powershell
+python ctx.py run -- python -m pytest -q
+```
+
+貼られた結果を見て:
+
+1. 終了コードが 0 なら完了です。
+2. 失敗したテストがあれば、エラーメッセージから原因を説明し、修正案を出してください。
+   修正後はもう一度同じコマンドの実行を依頼してください。
+
+## スキル: todo-stats
+
+- 説明: todo.json の中身を集計する (件数・完了率・古い未完了タスク)
+- フォルダ: `.ctx/skills/todo-stats/`
+- ファイル: `.ctx/skills/todo-stats/stats.py`
+
+ToDo データについて質問されたら、推測せずに集計スクリプトの実行をユーザーに依頼してください。
+
+```powershell
+python ctx.py run -- python .ctx/skills/todo-stats/stats.py todo.json
+```
+
+- 引数はデータファイルのパスです (既定の保存先は `todo.json`)。
+- 7 日以上前に作られた未完了タスクを「古いタスク」として表示します。
+
 # プロジェクト: sample-project
 
 ## ディレクトリツリー
 
 ```text
 sample-project/
+├── .ctx/
+│   └── skills/
+│       └── todo-stats/
+│           └── stats.py
 ├── config/
 │   └── stage/
 │       └── prod.local.toml
@@ -36,6 +88,7 @@ sample-project/
 │       └── storage.py
 ├── tests/
 │   ├── fixtures/
+│   │   ├── sample-todo.json
 │   │   └── tmp
 │   └── test_storage.py
 ├── web/
@@ -47,7 +100,57 @@ sample-project/
 └── README.md
 ```
 
-## ソースコード (16 ファイル)
+## ソースコード (18 ファイル)
+
+### .ctx/skills/todo-stats/stats.py
+
+```python
+"""todo.json を集計して表示する (todo-stats スキル用)
+
+使い方: python stats.py [todo.json] [--today YYYY-MM-DD]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from datetime import date, datetime
+from pathlib import Path
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("path", nargs="?", default="todo.json")
+    parser.add_argument("--today", help="基準日 (既定: 今日)")
+    args = parser.parse_args()
+
+    path = Path(args.path)
+    if not path.exists():
+        print(f"ファイルがありません: {path}")
+        return 1
+    tasks = json.loads(path.read_text(encoding="utf-8"))
+    today = date.fromisoformat(args.today) if args.today else date.today()
+
+    done = [t for t in tasks if t.get("done")]
+    print(f"タスク数: {len(tasks)}")
+    if tasks:
+        print(f"完了: {len(done)} ({len(done) / len(tasks):.0%})")
+    print("古い未完了タスク (7 日以上):")
+    stale = 0
+    for t in tasks:
+        created = datetime.fromisoformat(t["created_at"]).date()
+        age = (today - created).days
+        if not t.get("done") and age >= 7:
+            print(f"  #{t['id']} {t['title']} ({age} 日前)")
+            stale += 1
+    if stale == 0:
+        print("  なし")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
 
 ### .gitignore
 
@@ -243,6 +346,16 @@ class TaskStore:
                 self.save(tasks)
                 return task
         raise KeyError(f"タスク {task_id} は存在しません")
+```
+
+### tests/fixtures/sample-todo.json
+
+```json
+[
+  {"id": 1, "title": "牛乳を買う", "done": true, "created_at": "2026-11-01T09:00:00"},
+  {"id": 2, "title": "本を返す", "done": false, "created_at": "2026-11-10T12:30:00"},
+  {"id": 3, "title": "部屋の掃除", "done": false, "created_at": "2026-11-20T18:00:00"}
+]
 ```
 
 ### tests/fixtures/tmp

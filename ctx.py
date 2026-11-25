@@ -26,12 +26,15 @@ import ctypes
 import fnmatch
 import functools
 import io
+import locale
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 # ---------------------------------------------------------------------------
@@ -43,6 +46,28 @@ PROMPT_FILES = ["CONTEXT_PROMPT.md", ".ctxprompt.md", ".ctxprompt"]
 
 # 追加の除外パターンファイル (.gitignore 形式)
 IGNORE_FILE = ".ctxignore"
+
+# スキルを探すフォルダ (ルートからの相対パス。各サブフォルダの SKILL.md を読む)
+SKILL_DIRS = [".ctx/skills", ".claude/skills"]
+SKILL_FILE = "SKILL.md"
+
+SKILLS_PREAMBLE = """\
+# スキル
+
+このプロジェクトには、以下のスキル (作業手順と補助スクリプト) があります。
+依頼内容に合うスキルがあれば、その手順に従ってください。
+
+- あなたはスクリプトやコマンドを直接実行できません。実行が必要なときは、
+  ユーザーが PowerShell で実行するコマンドを powershell のコードブロックで示し、実行を依頼してください。
+- 実行結果を見る必要があるときは、コマンドの前に `python {runner} run --` を付けてください。
+  ユーザーが実行すると、コマンド・終了コード・出力が「## 実行結果」の形でクリップボードにコピーされ、
+  このチャットに貼り付けられます。例:
+
+  ```powershell
+  python {runner} run -- python -m pytest -q
+  ```
+- 結果が貼られるまで、実行結果を推測で決めつけないでください。
+"""
 
 DEFAULT_PROMPT = """\
 あなたは熟練したソフトウェアエンジニアです。
@@ -353,6 +378,107 @@ def _glob_regex(pattern: str) -> re.Pattern[str]:
 
 
 # ---------------------------------------------------------------------------
+# スキル
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Skill:
+    name: str
+    description: str
+    dir: str  # ルートからの相対パス (POSIX 形式)
+    body: str
+    files: list[str]  # SKILL.md 以外のファイル (スキルフォルダからの相対パス)
+
+    @property
+    def skill_file(self) -> str:
+        return f"{self.dir}/{SKILL_FILE}"
+
+
+def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
+    """先頭の --- で囲まれた `key: value` を読み、(メタデータ, 本文) を返す"""
+    lines = text.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return {}, text
+    for end in range(1, len(lines)):
+        if lines[end].strip() == "---":
+            break
+    else:
+        return {}, text
+    meta: dict[str, str] = {}
+    for line in lines[1:end]:
+        key, sep, value = line.partition(":")
+        if sep and key.strip() and not line.startswith((" ", "\t", "#")):
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            meta[key.strip()] = value
+    return meta, "\n".join(lines[end + 1 :]).strip("\n")
+
+
+def load_skills(root: Path, dirs: list[str], only: list[str] | None) -> list[Skill]:
+    """dirs 以下の <name>/SKILL.md を読み込む。同名のスキルは先に見つかった方を使う"""
+    skills: dict[str, Skill] = {}
+    for d in dirs:
+        base = root / d
+        if not base.is_dir():
+            continue
+        for sub in sorted(base.iterdir(), key=lambda p: p.name.lower()):
+            skill_md = sub / SKILL_FILE
+            if not skill_md.is_file():
+                continue
+            meta, body = parse_frontmatter(read_text(skill_md))
+            name = meta.get("name") or sub.name
+            if name in skills:
+                continue
+            rel_dir = sub.resolve().relative_to(root.resolve()).as_posix()
+            files = sorted(
+                (
+                    f.relative_to(sub).as_posix()
+                    for f in sub.rglob("*")
+                    if f.is_file()
+                    and f.name != SKILL_FILE
+                    and not any(
+                        p in DEFAULT_EXCLUDE_DIRS for p in f.relative_to(sub).parts
+                    )
+                ),
+                key=str.lower,
+            )
+            skills[name] = Skill(
+                name=name,
+                description=meta.get("description", ""),
+                dir=rel_dir,
+                body=body.replace("${SKILL_DIR}", rel_dir),
+                files=files,
+            )
+    if only:
+        missing = [n for n in only if n not in skills]
+        if missing:
+            raise ValueError(
+                f"スキルが見つかりません: {', '.join(missing)} "
+                f"(あるもの: {', '.join(skills) or 'なし'})"
+            )
+        return [skills[n] for n in only]
+    return list(skills.values())
+
+
+def build_skills_section(skills: list[Skill], runner: str) -> str:
+    out = [SKILLS_PREAMBLE.format(runner=runner)]
+    for sk in skills:
+        out.append(f"## スキル: {sk.name}\n")
+        info = []
+        if sk.description:
+            info.append(f"- 説明: {sk.description}")
+        info.append(f"- フォルダ: `{sk.dir}/`")
+        if sk.files:
+            info.append("- ファイル: " + ", ".join(f"`{sk.dir}/{f}`" for f in sk.files))
+        out.append("\n".join(info) + "\n")
+        if sk.body.strip():
+            out.append(sk.body.strip() + "\n")
+    return "\n".join(out)
+
+
+# ---------------------------------------------------------------------------
 # ファイル収集
 # ---------------------------------------------------------------------------
 
@@ -478,8 +604,7 @@ def read_text(path: Path) -> str:
 def collect(
     root: Path,
     args: argparse.Namespace,
-    self_path: Path | None,
-    prompt_path: Path | None,
+    skip_paths: list[Path],
 ) -> tuple[list[str], list[tuple[str, str]]]:
     """(採用ファイル一覧, [(除外ファイル, 理由)]) を返す"""
     files = None if args.no_git else git_list_files(root)
@@ -491,12 +616,11 @@ def collect(
         ctxignore.add_file(root / IGNORE_FILE)
 
     skip_rel = {IGNORE_FILE}
-    for p in (self_path, prompt_path):
-        if p is not None:
-            try:
-                skip_rel.add(p.resolve().relative_to(root.resolve()).as_posix())
-            except ValueError:
-                pass
+    for p in skip_paths:
+        try:
+            skip_rel.add(p.resolve().relative_to(root.resolve()).as_posix())
+        except ValueError:
+            pass
     if args.output:
         try:
             skip_rel.add(
@@ -598,11 +722,18 @@ def estimate_tokens(text: str) -> int:
 
 
 def build_context(
-    root: Path, files: list[str], prompt: str, show_tree: bool, line_numbers: bool
+    root: Path,
+    files: list[str],
+    prompt: str,
+    show_tree: bool,
+    line_numbers: bool,
+    skills_section: str = "",
 ) -> str:
     out: list[str] = []
     if prompt.strip():
         out.append(prompt.rstrip() + "\n")
+    if skills_section:
+        out.append(skills_section.rstrip() + "\n")
     out.append(f"# プロジェクト: {root.name}\n")
     if show_tree:
         out.append("## ディレクトリツリー\n")
@@ -712,6 +843,153 @@ def copy_to_clipboard(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# run: コマンドを実行し、結果を LLM に貼れる形でクリップボードへ
+# ---------------------------------------------------------------------------
+
+ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07")
+
+
+def decode_output(data: bytes) -> str:
+    """UTF-8 → OS の既定 (日本語 Windows なら cp932) の順に試す"""
+    for enc in ("utf-8", locale.getpreferredencoding(False), "cp932"):
+        try:
+            text = data.decode(enc)
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+    else:
+        text = data.decode("utf-8", errors="replace")
+    text = ANSI_RE.sub("", text.replace("\r\n", "\n"))
+    # 進捗表示などの \r による上書きは最後の内容だけ残す
+    return "\n".join(line.rsplit("\r", 1)[-1] for line in text.split("\n"))
+
+
+def shell_command(command: str) -> list[str]:
+    """1 つの文字列で渡されたコマンドをシェル経由で実行する引数にする"""
+    if sys.platform == "win32":
+        ps = shutil.which("pwsh") or shutil.which("powershell") or "powershell"
+        # PowerShell の出力を UTF-8 にしてから実行する
+        prefix = "[Console]::OutputEncoding=[Text.Encoding]::UTF8; "
+        return [ps, "-NoProfile", "-Command", prefix + command]
+    return ["/bin/sh", "-c", command]
+
+
+def format_run_result(display: str, code: int, output: str, tail: int) -> str:
+    lines = output.rstrip("\n").split("\n") if output.strip() else []
+    total = len(lines)
+    note = ""
+    if tail and total > tail:
+        note = f"(先頭 {total - tail} 行を省略。全 {total} 行のうち最後の {tail} 行)\n"
+        lines = lines[-tail:]
+    body = note + ("\n".join(lines) if lines else "(出力なし)")
+    status = "成功" if code == 0 else "失敗"
+    cmd_block = f"PS> {display}"
+    out_fence = fence_for(body)
+    cmd_fence = fence_for(cmd_block)
+    return (
+        "## 実行結果\n\n"
+        f"{cmd_fence}powershell\n{cmd_block}\n{cmd_fence}\n\n"
+        f"- 終了コード: {code} ({status})\n\n"
+        f"{out_fence}text\n{body}\n{out_fence}\n"
+    )
+
+
+def execute(cmd: list[str]) -> tuple[int, str]:
+    """コマンドを実行し、出力を画面に流しながら集める。(終了コード, 出力)"""
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env
+        )
+    except FileNotFoundError:
+        return 127, f"コマンドが見つかりません: {cmd[0]}"
+    except OSError as e:
+        return 126, f"コマンドを実行できません: {e}"
+    assert proc.stdout is not None
+    chunks: list[bytes] = []
+    for line in iter(proc.stdout.readline, b""):
+        chunks.append(line)
+        sys.stderr.write(decode_output(line).rstrip("\n") + "\n")
+        sys.stderr.flush()
+    return proc.wait(), decode_output(b"".join(chunks))
+
+
+def run_main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(
+        prog="ctx.py run",
+        description=(
+            "コマンドを実行し、コマンド・終了コード・出力を LLM に貼れる形で"
+            "クリップボードへコピーします。"
+        ),
+        epilog=(
+            "例: python ctx.py run -- python -m pytest -q   /   "
+            'python ctx.py run "Get-ChildItem src | Select-Object Name"'
+        ),
+    )
+    ap.add_argument(
+        "--tail",
+        type=int,
+        default=200,
+        metavar="N",
+        help="出力の最後の N 行だけ残す (0 で全部。既定: 200)",
+    )
+    ap.add_argument(
+        "-o", "--output", metavar="FILE", help="クリップボードの代わりにファイルへ出力"
+    )
+    ap.add_argument(
+        "--stdout", action="store_true", help="クリップボードの代わりに標準出力へ"
+    )
+    ap.add_argument(
+        "command",
+        nargs="*",
+        help="実行するコマンド。-- の後に書く。1 つの文字列ならシェル (Windows は PowerShell) で実行",
+    )
+    if "--" in argv:
+        i = argv.index("--")
+        args = ap.parse_args(argv[:i])
+        command = argv[i + 1 :]
+    else:
+        args = ap.parse_args(argv)
+        command = args.command
+    if not command:
+        ap.error("実行するコマンドを指定してください")
+
+    if len(command) == 1:
+        display, cmd = command[0], shell_command(command[0])
+    else:
+        join = subprocess.list2cmdline if sys.platform == "win32" else shlex.join
+        display, cmd = join(command), command
+
+    code, output = execute(cmd)
+    text = format_run_result(display, code, output, args.tail)
+    n_lines = len(output.rstrip("\n").split("\n")) if output.strip() else 0
+    summary = f"終了コード {code} / {n_lines} 行"
+
+    if args.stdout:
+        sys.stdout.write(text)
+        print(f"[ctx] {summary}", file=sys.stderr)
+        return code
+    if args.output:
+        Path(args.output).write_text(text, encoding="utf-8")
+        print(f"[ctx] {args.output} に出力しました: {summary}", file=sys.stderr)
+        return code
+    try:
+        how = copy_to_clipboard(text)
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(
+            f"エラー: クリップボードへのコピーに失敗しました ({e})\n"
+            f"  --stdout か -o FILE を使ってください。",
+            file=sys.stderr,
+        )
+        return code or 1
+    print(
+        f"[ctx] 実行結果をクリップボードにコピーしました ({how}): {summary}",
+        file=sys.stderr,
+    )
+    return code
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
@@ -739,9 +1017,17 @@ def main(argv: list[str] | None = None) -> int:
             except ValueError:
                 pass
 
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["run"]:
+        return run_main(argv[1:])
+
     script = Path(__file__).resolve()
     ap = argparse.ArgumentParser(
         description="プロジェクトを LLM 用の 1 コンテキストにまとめてクリップボードへコピーします。",
+        epilog=(
+            "コマンドの実行結果をコピーする: python ctx.py run -- <コマンド>"
+            " (詳しくは python ctx.py run -h)"
+        ),
     )
     ap.add_argument(
         "root",
@@ -770,6 +1056,20 @@ def main(argv: list[str] | None = None) -> int:
         help=f"冒頭プロンプトのファイル (既定: {' / '.join(PROMPT_FILES)} → 内蔵プロンプト)",
     )
     ap.add_argument("--no-prompt", action="store_true", help="冒頭プロンプトを付けない")
+    ap.add_argument(
+        "-s",
+        "--skill",
+        action="append",
+        metavar="NAME",
+        help="入れるスキルを指定 (複数可。既定: 見つかったスキルすべて)",
+    )
+    ap.add_argument(
+        "--skills-dir",
+        action="append",
+        metavar="DIR",
+        help=f"スキルを探すフォルダ (複数可。既定: {' / '.join(SKILL_DIRS)})",
+    )
+    ap.add_argument("--no-skills", action="store_true", help="スキルを入れない")
     ap.add_argument(
         "--no-tree", action="store_true", help="ディレクトリツリーを付けない"
     )
@@ -806,7 +1106,24 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     prompt, prompt_path = load_prompt(root, args)
-    files, skipped = collect(root, args, script, prompt_path)
+    try:
+        skills = (
+            []
+            if args.no_skills
+            else load_skills(root, args.skills_dir or SKILL_DIRS, args.skill)
+        )
+    except ValueError as e:
+        print(f"エラー: {e}", file=sys.stderr)
+        return 1
+    try:
+        runner = script.relative_to(root.resolve()).as_posix()
+    except ValueError:
+        runner = script.name
+    skills_section = build_skills_section(skills, runner) if skills else ""
+
+    skip_paths = [script] + ([prompt_path] if prompt_path else [])
+    skip_paths += [root / sk.skill_file for sk in skills]
+    files, skipped = collect(root, args, skip_paths)
 
     if not files:
         print("対象ファイルがありません。", file=sys.stderr)
@@ -820,15 +1137,24 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{t:>8,} tok  {rel}")
         for rel, why in skipped:
             print(f"{'skip':>12}  {rel}  ({why})")
+        for sk in skills:
+            print(f"{'skill':>12}  {sk.name}  ({sk.skill_file})")
+        extra = estimate_tokens(prompt) + estimate_tokens(skills_section)
         print(
-            f"\n{len(files)} ファイル / 推定 {total + estimate_tokens(prompt):,} トークン",
+            f"\n{len(files)} ファイル"
+            + (f" / スキル {len(skills)}" if skills else "")
+            + f" / 推定 {total + extra:,} トークン",
             file=sys.stderr,
         )
         return 0
 
-    text = build_context(root, files, prompt, not args.no_tree, args.line_numbers)
+    text = build_context(
+        root, files, prompt, not args.no_tree, args.line_numbers, skills_section
+    )
     summary = (
-        f"{len(files)} ファイル / {len(text):,} 文字 / 推定 {estimate_tokens(text):,} トークン"
+        f"{len(files)} ファイル"
+        + (f" / スキル {len(skills)}" if skills else "")
+        + f" / {len(text):,} 文字 / 推定 {estimate_tokens(text):,} トークン"
         + (f" (スキップ {len(skipped)})" if skipped else "")
     )
 
