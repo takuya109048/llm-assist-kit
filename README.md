@@ -27,10 +27,7 @@ LLM はコマンドを実行できないので、スクリプトは自分で Pow
 C:\tools\llm-assist-kit\      ← キット (例)
 ├── ctx.py
 └── skills\                    ← スキル (どのプロジェクトでも使う)
-    ├── apply-patch\SKILL.md, apply.py, apply_patch.zip
-    ├── run-tests\SKILL.md
-    ├── git-diff\SKILL.md, diff.py
-    └── search\SKILL.md, search.py
+    └── apply-patch\SKILL.md, apply.py, apply_patch.zip
 
 my-project\                    ← 対象プロジェクト
 ├── CONTEXT_PROMPT.md          ← (任意) 冒頭プロンプト
@@ -55,7 +52,7 @@ ctx -x "tests/**"      # 除外を追加
 ctx -n                 # 行番号付き
 ctx -p review.md       # 別の冒頭プロンプトを使う
 ctx --no-prompt        # 冒頭プロンプトなし
-ctx -s search -s git-diff  # 入れるスキルを指定 (複数可。既定: すべて)
+ctx -s apply-patch    # 入れるスキルを指定 (複数可。既定: すべて)
 ctx --no-skills        # スキルを入れない
 ctx -o context.md      # ファイルへ出力
 ctx --stdout           # 標準出力へ
@@ -98,27 +95,24 @@ Claude Code のスキルと同じ形式です。
 
 | スキル | 内容 |
 | --- | --- |
-| [`run-tests`](skills/run-tests/SKILL.md) | コードの変更を提案したら、テストの実行を依頼して結果を確認する |
-| [`git-diff`](skills/git-diff/SKILL.md) | 頼まれたときだけ、git の差分 ([`diff.py`](skills/git-diff/diff.py)) を見せてもらう (パッチの後の確認には使わない) |
-| [`search`](skills/search/SKILL.md) | プロジェクト内を検索 ([`search.py`](skills/search/search.py)) して該当箇所を見せてもらう |
 | [`apply-patch`](skills/apply-patch/SKILL.md) | LLM が出したパッチで、ファイルの修正・新規作成・削除・移動をまとめて行う (下記) |
 
 スキルを追加するには `skills/<名前>/` に `SKILL.md` (とスクリプト) を置きます。
 
 ````markdown
 ---
-name: search
-description: プロジェクト内を文字列や正規表現で検索して、該当箇所を見せてもらう
+name: my-skill
+description: (このスキルを使う場面を 1 行で)
 ---
-確認したい箇所があれば、検索の実行をユーザーに依頼してください。
+(LLM への指示。スクリプトを使う場合は、実行するコマンドをユーザーに依頼させる)
 
 ```powershell
-python ${CTX} run -- python ${SKILL_DIR}/search.py "検索する文字列"
+python ${CTX} run -- python ${SKILL_DIR}/my_script.py
 ```
 ````
 
 - `name` / `description` は省略可 (`name` の既定はフォルダ名)
-- 本文の `${SKILL_DIR}` はスキルフォルダの実際のパス (例 `C:/tools/llm-assist-kit/skills/search`)、
+- 本文の `${SKILL_DIR}` はスキルフォルダの実際のパス (例 `C:/tools/llm-assist-kit/skills/apply-patch`)、
   `${CTX}` は ctx.py の実際のパスに置き換わるので、LLM はそのまま実行できるコマンドを示せます
 - スキル欄の先頭には「あなたはコマンドを実行できない。実行はユーザーに `python <ctx.py> run -- ...` で依頼し、
   貼られた結果を待つこと」という説明が自動で付きます
