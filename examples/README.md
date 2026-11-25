@@ -68,7 +68,7 @@ PS> ctx --list
 
 | ファイル | 理由 |
 | --- | --- |
-| `CONTEXT_PROMPT.md` | 冒頭プロンプトとして先頭に入る |
+| `AGENTS.md` | 冒頭プロンプトとして先頭に入る |
 | `.ctxignore` | 設定ファイル |
 | `.env.example` | 既定の秘密情報パターン `.env.*` |
 | `assets/logo.png` | 既定の画像パターン `*.png` |
