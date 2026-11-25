@@ -207,3 +207,24 @@ def test_scripts_print_utf8_on_single_byte_console(
     out = (r.stdout + r.stderr).decode("utf-8")
     assert "Traceback" not in out
     assert "UnicodeEncodeError" not in out
+
+
+def test_apply_patch_assumes_previous_patch_applied():
+    """結果が貼られないまま次の依頼が来ても、確認コマンドを出さずに続ける決まりがある
+
+    (以前、適用できたか分からないとして確認用のコマンドを出してしまったことへの対策)
+    """
+    _, body = ctx.parse_frontmatter(
+        ctx.read_text(KIT_SKILLS / "apply-patch" / "SKILL.md")
+    )
+    assert "前のパッチは成功して適用済みとみなします" in body
+    assert "確認や、ファイルの現在の内容を\n   表示するコマンドを先に出さず" in body
+    assert "すべて適用した後の内容" in body
+
+
+def test_preamble_lets_skills_override_waiting_for_results():
+    """共通の説明の「結果を待つ」は実行結果の中身に限り、スキルの決まりを優先する"""
+    assert "結果が貼られるまで、実行結果を推測で決めつけないでください。" not in (
+        ctx.SKILLS_PREAMBLE
+    )
+    assert "各スキルに別の決まりがあれば、そちらに従ってください" in ctx.SKILLS_PREAMBLE
