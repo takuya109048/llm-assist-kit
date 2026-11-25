@@ -460,7 +460,8 @@ def load_skills(dirs: list[Path], only: list[str] | None, root: Path) -> list[Sk
                     if f.is_file()
                     and f.name != SKILL_FILE
                     and not any(
-                        p in DEFAULT_EXCLUDE_DIRS for p in f.relative_to(sub).parts
+                        p in DEFAULT_EXCLUDE_DIRS or p.startswith(".")
+                        for p in f.relative_to(sub).parts
                     )
                 ),
                 key=str.lower,
