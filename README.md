@@ -99,7 +99,7 @@ Claude Code のスキルと同じ形式です。
 | スキル | 内容 |
 | --- | --- |
 | [`run-tests`](skills/run-tests/SKILL.md) | コードの変更を提案したら、テストの実行を依頼して結果を確認する |
-| [`git-diff`](skills/git-diff/SKILL.md) | 変更を反映した後、git の差分 ([`diff.py`](skills/git-diff/diff.py)) を見せてもらい提案どおりか確認する |
+| [`git-diff`](skills/git-diff/SKILL.md) | 頼まれたときだけ、git の差分 ([`diff.py`](skills/git-diff/diff.py)) を見せてもらう (パッチの後の確認には使わない) |
 | [`search`](skills/search/SKILL.md) | プロジェクト内を検索 ([`search.py`](skills/search/search.py)) して該当箇所を見せてもらう |
 | [`apply-patch`](skills/apply-patch/SKILL.md) | LLM が出したパッチで、ファイルの修正・新規作成・削除・移動をまとめて行う (下記) |
 

@@ -228,3 +228,21 @@ def test_preamble_lets_skills_override_waiting_for_results():
         ctx.SKILLS_PREAMBLE
     )
     assert "各スキルに別の決まりがあれば、そちらに従ってください" in ctx.SKILLS_PREAMBLE
+
+
+def test_no_verification_command_after_patch():
+    """パッチの後に、差分確認などのコマンドを続けて求めない
+
+    (以前、パッチ適用後に git-diff での確認を毎回求めてしまったことへの対策)
+    """
+    _, patch_body = ctx.parse_frontmatter(
+        ctx.read_text(KIT_SKILLS / "apply-patch" / "SKILL.md")
+    )
+    assert "適用後の確認のためのコマンドを求めないでください" in patch_body
+    assert "git-diff スキルで差分を" not in patch_body
+
+    meta, diff_body = ctx.parse_frontmatter(
+        ctx.read_text(KIT_SKILLS / "git-diff" / "SKILL.md")
+    )
+    assert meta["description"].startswith("ユーザーに頼まれたときだけ")
+    assert "反映されたかの確認としてこのコマンドを求めてはいけません" in diff_body
