@@ -35,11 +35,21 @@ my-project\                    ← 対象プロジェクト
 └── src\ ...
 ```
 
-毎回パスを打たなくて済むように、PowerShell のプロファイル (`notepad $PROFILE`) に関数を登録しておくと便利です。
+初期設定として、キットのフォルダで次を 1 回実行します。PowerShell のプロファイルに `ctx` などの関数が登録され、
+どのフォルダからでも `ctx` で使えるようになります。
 
 ```powershell
-function ctx { python C:\tools\llm-assist-kit\ctx.py @args }
+cd C:\tools\llm-assist-kit
+python install.py
 ```
+
+- Windows PowerShell 5.1 と PowerShell 7 の両方のプロファイル (`$PROFILE.CurrentUserAllHosts`) に登録します
+- プロファイルの `# >>> llm-assist-kit >>>` 〜 `# <<< llm-assist-kit <<<` の範囲だけを書き換えるので、
+  何度実行しても同じです。キットのフォルダを移したら、もう一度実行してください
+- 実行ポリシーが `Restricted` だとプロファイルが読み込まれません。そのときは注意と、直すコマンドを表示します
+  (`python install.py --set-execution-policy` で、現在のユーザーだけ `RemoteSigned` にもできます)
+- `python install.py --uninstall` で外せます。`--print` で書き込む内容だけ表示します
+- 関数を追加するときは、`install.py` の `FUNCTIONS` に 1 行足して `python install.py` を実行し直します
 
 ### 使い方 (PowerShell、プロジェクトのフォルダで)
 
