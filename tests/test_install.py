@@ -281,4 +281,17 @@ def test_find_profiles_with_real_powershell(shell: str):
     if shell == "(none)":
         pytest.skip("PowerShell が無い")
     found = dict(install.find_profiles())
+    if shell not in found:
+        # 失敗の原因が分かるよう、PowerShell の生の出力を表示する
+        r = subprocess.run(
+            [
+                shell,
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "$PROFILE.CurrentUserAllHosts",
+            ],
+            capture_output=True,
+        )
+        pytest.fail(f"{shell}: rc={r.returncode} out={r.stdout!r} err={r.stderr!r}")
     assert found[shell].name == "profile.ps1"

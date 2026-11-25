@@ -170,10 +170,11 @@ def find_profiles() -> list[tuple[str, Path]]:
     for exe in POWERSHELLS:
         if not shutil.which(exe):
             continue
-        # 日本語のユーザー名でも文字化けしないよう、出力を UTF-8 にしてから聞く
+        # 日本語のユーザー名でも文字化けしないよう、出力を UTF-8 にしてから聞く。
+        # 環境によっては (macOS など) この切り替えが例外になるので、失敗しても続ける
         out = run_powershell(
             exe,
-            "[Console]::OutputEncoding=[Text.Encoding]::UTF8; "
+            "try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}; "
             "$PROFILE.CurrentUserAllHosts",
         )
         if out:
