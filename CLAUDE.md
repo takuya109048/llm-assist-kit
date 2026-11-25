@@ -11,9 +11,11 @@ poetry, or conda. There is no lockfile.
 - Runtime dependencies live in `[project] dependencies` in `pyproject.toml`
 - Dev tools (pytest, ruff, pyrefly) live in `[project.optional-dependencies] dev`
 - After changing dependencies in `pyproject.toml`, re-run `pip install -e ".[dev]"`
-- `ctx.py` must stay a single file that uses only the standard library: users copy
-  it into other projects and run it without installing anything. Do not add
-  runtime dependencies.
+- `ctx.py` must stay a single file that uses only the standard library: users run
+  it on other projects without installing anything. Do not add runtime dependencies.
+- Skills live in `skills/<name>/` (`SKILL.md` plus optional scripts), not in the
+  target projects. Skill scripts also use only the standard library. In `SKILL.md`,
+  write paths as `${SKILL_DIR}/...` and the runner as `python ${CTX} run -- ...`.
 
 ## Run code
 

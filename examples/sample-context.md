@@ -17,51 +17,75 @@
 
 # スキル
 
-このプロジェクトには、以下のスキル (作業手順と補助スクリプト) があります。
+以下のスキル (作業手順と補助スクリプト) が使えます。
 依頼内容に合うスキルがあれば、その手順に従ってください。
 
 - あなたはスクリプトやコマンドを直接実行できません。実行が必要なときは、
   ユーザーが PowerShell で実行するコマンドを powershell のコードブロックで示し、実行を依頼してください。
-- 実行結果を見る必要があるときは、コマンドの前に `python ctx.py run --` を付けてください。
+- 実行結果を見る必要があるときは、コマンドの前に `python C:/tools/llm-assist-kit/ctx.py run --` を付けてください。
   ユーザーが実行すると、コマンド・終了コード・出力が「## 実行結果」の形でクリップボードにコピーされ、
   このチャットに貼り付けられます。例:
 
   ```powershell
-  python ctx.py run -- python -m pytest -q
+  python C:/tools/llm-assist-kit/ctx.py run -- python -m pytest -q
   ```
 - 結果が貼られるまで、実行結果を推測で決めつけないでください。
 
-## スキル: run-tests
+## スキル: git-diff
 
-- 説明: コードを変更したら、ユーザーにテストを実行してもらい結果を確認する
-- フォルダ: `.ctx/skills/run-tests/`
+- 説明: ユーザーが変更を反映した後、git の差分を見せてもらって提案どおりか確認する
+- フォルダ: `C:/tools/llm-assist-kit/skills/git-diff/`
+- ファイル: `C:/tools/llm-assist-kit/skills/git-diff/diff.py`
 
-コードの変更を提案したら、最後に必ず次のコマンドの実行をユーザーに依頼してください。
+あなたが提案した変更をユーザーが反映したら、提案どおりに反映されたか確認するため、
+差分の表示をユーザーに依頼してください。
 
 ```powershell
-python ctx.py run -- python -m pytest -q
+python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/git-diff/diff.py
 ```
 
-貼られた結果を見て:
+- 特定のファイルだけ見たいときは、パスを後ろに付けます (例: `... diff.py src/app.py`)。
+- 出力は「変更されたファイル一覧 (git status)」「変更量 (git diff --stat)」「差分本体」の順です。
+- 差分が提案と違っていれば、どこが違うかを具体的に指摘してください。
+
+## スキル: run-tests
+
+- 説明: コードの変更を提案したら、ユーザーにテストを実行してもらい結果を確認する
+- フォルダ: `C:/tools/llm-assist-kit/skills/run-tests/`
+
+コードの変更を提案したら、最後にテストの実行をユーザーに依頼してください。
+Python (pytest) のプロジェクトなら次のコマンドです。ほかの言語やツールのプロジェクトでは、
+README や設定ファイル (package.json の scripts、Makefile など) から適切なテストコマンドを選んでください。
+
+```powershell
+python C:/tools/llm-assist-kit/ctx.py run -- python -m pytest -q
+```
+
+貼られた「## 実行結果」を見て:
 
 1. 終了コードが 0 なら完了です。
 2. 失敗したテストがあれば、エラーメッセージから原因を説明し、修正案を出してください。
    修正後はもう一度同じコマンドの実行を依頼してください。
+3. テストの出力が途中で省略されていて原因が分からなければ、
+   失敗したテストだけを実行するコマンド (例: `python -m pytest -q tests/test_x.py::test_y`) を依頼してください。
 
-## スキル: todo-stats
+## スキル: search
 
-- 説明: todo.json の中身を集計する (件数・完了率・古い未完了タスク)
-- フォルダ: `.ctx/skills/todo-stats/`
-- ファイル: `.ctx/skills/todo-stats/stats.py`
+- 説明: プロジェクト内を文字列や正規表現で検索して、該当箇所を見せてもらう
+- フォルダ: `C:/tools/llm-assist-kit/skills/search/`
+- ファイル: `C:/tools/llm-assist-kit/skills/search/search.py`
 
-ToDo データについて質問されたら、推測せずに集計スクリプトの実行をユーザーに依頼してください。
+貼られたコンテキストだけでは分からない箇所 (コンテキストから外したファイル、
+使われている場所の一覧、最新の内容など) を確認したいときは、検索の実行をユーザーに依頼してください。
 
 ```powershell
-python ctx.py run -- python .ctx/skills/todo-stats/stats.py todo.json
+python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/search/search.py "検索する文字列"
 ```
 
-- 引数はデータファイルのパスです (既定の保存先は `todo.json`)。
-- 7 日以上前に作られた未完了タスクを「古いタスク」として表示します。
+- 既定は正規表現です。`-F` で文字列そのまま、`-i` で大文字小文字を区別しません。
+- `-g "*.py"` で対象ファイルを絞り込めます (複数可)。検索するフォルダを最後に付けられます (既定: 今いるフォルダ)。
+- `-C 2` で前後 2 行も表示します。
+- git 管理下なら .gitignore を尊重します。結果は `パス:行番号: 内容` の形で、最大 200 件です。
 
 # プロジェクト: sample-project
 
@@ -69,10 +93,6 @@ python ctx.py run -- python .ctx/skills/todo-stats/stats.py todo.json
 
 ```text
 sample-project/
-├── .ctx/
-│   └── skills/
-│       └── todo-stats/
-│           └── stats.py
 ├── config/
 │   └── stage/
 │       └── prod.local.toml
@@ -88,7 +108,6 @@ sample-project/
 │       └── storage.py
 ├── tests/
 │   ├── fixtures/
-│   │   ├── sample-todo.json
 │   │   └── tmp
 │   └── test_storage.py
 ├── web/
@@ -100,57 +119,7 @@ sample-project/
 └── README.md
 ```
 
-## ソースコード (18 ファイル)
-
-### .ctx/skills/todo-stats/stats.py
-
-```python
-"""todo.json を集計して表示する (todo-stats スキル用)
-
-使い方: python stats.py [todo.json] [--today YYYY-MM-DD]
-"""
-
-from __future__ import annotations
-
-import argparse
-import json
-from datetime import date, datetime
-from pathlib import Path
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("path", nargs="?", default="todo.json")
-    parser.add_argument("--today", help="基準日 (既定: 今日)")
-    args = parser.parse_args()
-
-    path = Path(args.path)
-    if not path.exists():
-        print(f"ファイルがありません: {path}")
-        return 1
-    tasks = json.loads(path.read_text(encoding="utf-8"))
-    today = date.fromisoformat(args.today) if args.today else date.today()
-
-    done = [t for t in tasks if t.get("done")]
-    print(f"タスク数: {len(tasks)}")
-    if tasks:
-        print(f"完了: {len(done)} ({len(done) / len(tasks):.0%})")
-    print("古い未完了タスク (7 日以上):")
-    stale = 0
-    for t in tasks:
-        created = datetime.fromisoformat(t["created_at"]).date()
-        age = (today - created).days
-        if not t.get("done") and age >= 7:
-            print(f"  #{t['id']} {t['title']} ({age} 日前)")
-            stale += 1
-    if stale == 0:
-        print("  なし")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
+## ソースコード (16 ファイル)
 
 ### .gitignore
 
@@ -346,16 +315,6 @@ class TaskStore:
                 self.save(tasks)
                 return task
         raise KeyError(f"タスク {task_id} は存在しません")
-```
-
-### tests/fixtures/sample-todo.json
-
-```json
-[
-  {"id": 1, "title": "牛乳を買う", "done": true, "created_at": "2026-11-01T09:00:00"},
-  {"id": 2, "title": "本を返す", "done": false, "created_at": "2026-11-10T12:30:00"},
-  {"id": 3, "title": "部屋の掃除", "done": false, "created_at": "2026-11-20T18:00:00"}
-]
 ```
 
 ### tests/fixtures/tmp
