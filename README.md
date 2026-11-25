@@ -130,16 +130,33 @@ python ${CTX} run -- python ${SKILL_DIR}/search.py "検索する文字列"
 LLM にファイル全体を書き直させる代わりに、[codex](https://github.com/openai/codex) の
 `apply_patch` 形式のパッチを出させ、まとめて適用します。
 
-1. LLM が `*** Begin Patch` 〜 `*** End Patch` のパッチを出す (書き方は [SKILL.md](skills/apply-patch/SKILL.md) で LLM に伝わる)
-2. LLM の回答をコピーして、プロジェクトのフォルダで実行する
+[SKILL.md](skills/apply-patch/SKILL.md) で LLM に「ファイルへのあらゆる変更 (修正・新規作成・追記・削除・移動) は、
+パッチを埋め込んだ PowerShell コマンドとして、1 つのコードブロックに 1 つのコマンドで、省略せず最後まで出す」
+ように指示しています。LLM は毎回次の形のブロックを出します。
 
-   ```powershell
-   ctx run -- python C:\tools\llm-assist-kit\skills\apply-patch\apply.py
-   ```
-3. 結果 (`Success. Updated the following files: ...` かエラー) がクリップボードに入るので、チャットに貼り返す
+```powershell
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+@'
+*** Begin Patch
+*** Update File: src/app.py
+@@ def greet(name):
+-    print("Hi " + name)
++    print(f"こんにちは、{name} さん")
+*** Add File: docs/usage.md
++# 使い方
+*** Delete File: old.txt
+*** End Patch
+'@ | python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/apply-patch/apply.py -f -
+```
 
-- クリップボードの中からパッチの部分だけを取り出すので、LLM の回答をまるごとコピーして構いません
-  (`-f patch.txt` でファイルからも読めます。`--dry-run` で変更されるファイルの一覧だけ表示)
+1. そのブロックをコピーして、プロジェクトのフォルダの PowerShell に貼って実行する
+2. パッチが適用され、結果 (`Success. Updated the following files: ...` かエラー) がクリップボードに入る
+3. チャットに貼り返す
+
+- 1 行目は、Windows PowerShell 5.1 でパッチ中の日本語が化けないための設定です
+  (外部コマンドへのパイプが既定で ASCII になるため)
+- `apply.py` は単体でも使えます: 引数なしでクリップボード (LLM の回答をまるごとコピーしたもの) から
+  パッチ部分だけを取り出して適用、`-f patch.txt` でファイルから、`--dry-run` で変更されるファイルの一覧だけ表示
 - 適用前に、追加・更新・削除するファイルの一覧を表示します
 - プロジェクトの外を指すパス (絶対パスや `..`) を含むパッチは適用しません
 - 途中で失敗したときは、そのとき適用した変更をすべて元に戻します (中途半端な状態を残しません)

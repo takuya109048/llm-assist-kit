@@ -2,7 +2,8 @@
 
 使い方 (プロジェクトのフォルダで):
     python apply.py              # クリップボードのパッチを適用
-    python apply.py -f patch.txt # ファイルから (- で標準入力)
+    python apply.py -f patch.txt # ファイルから
+    ... | python apply.py -f -   # 標準入力から (PowerShell のヒアストリングを渡す)
     python apply.py --dry-run    # 変更されるファイルの一覧だけ表示
 
 LLM の回答をまるごとコピーしてもよい: `*** Begin Patch` 〜 `*** End Patch` の部分だけを取り出す。
@@ -102,8 +103,22 @@ LABELS = {
 
 
 # ---------------------------------------------------------------------------
-# クリップボードの読み取り
+# 入力の読み取り
 # ---------------------------------------------------------------------------
+
+
+def decode_input(data: bytes) -> str:
+    """標準入力のバイト列を文字列にする
+
+    PowerShell からパイプで渡すと、$OutputEncoding に応じて UTF-8 (BOM 付きのことも) や
+    cp932 で届く。OS の既定の文字コードに頼らず、UTF-8 → cp932 の順に試す
+    """
+    for enc in ("utf-8-sig", "cp932"):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
 
 
 def read_clipboard() -> str:
@@ -258,7 +273,7 @@ def main(argv: list[str]) -> int:
 
     try:
         if args.file == "-":
-            text = sys.stdin.read()
+            text = decode_input(sys.stdin.buffer.read())
         elif args.file:
             text = Path(args.file).read_text(encoding="utf-8-sig")
         else:
