@@ -168,24 +168,24 @@ def test_closing_punctuation_does_not_start_a_line():
 
 # (スライド番号, 段落の先頭, 左端, 上端) ― Chromium で測った値
 MEASURED = [
-    (2, "現状の課題（1", 108.0, 77.2),
-    (2, "まとめ（ど真ん中", 108.0, 441.2),
-    (3, "問い合わせ件数が", 108.0, 77.2),
-    (3, "2024年度：月", 160.0, 116.2),
-    (3, "回答までに平均", 108.0, 207.2),
-    (4, "定型の質問は A", 56.0, 72.0),
-    (4, "社内規程と過去の", 108.0, 118.5),
-    (4, "難しい質問は担当", 56.0, 227.0),
-    (4, "AI が回答でき", 108.0, 273.5),
-    (5, "現行の対応", 56.0, 72.0),
-    (5, "新方式", 672.0, 72.0),
-    (5, "回答まで当日中を", 724.0, 209.5),
-    (6, "社内ポータルから", 108.0, 77.2),
-    (7, "一次回答", 676.8, 72.0),
-    (7, "難しい質問は要点", 676.8, 228.0),
-    (9, "問い合わせ対応シ", 56.0, 72.0),
+    (2, "現状の課題（1", 108.0, 93.2),
+    (2, "まとめ（ど真ん中", 108.0, 457.2),
+    (3, "問い合わせ件数が", 108.0, 93.2),
+    (3, "2024年度：月", 160.0, 132.2),
+    (3, "回答までに平均", 108.0, 223.2),
+    (4, "定型の質問は A", 56.0, 88.0),
+    (4, "社内規程と過去の", 108.0, 134.5),
+    (4, "難しい質問は担当", 56.0, 243.0),
+    (4, "AI が回答でき", 108.0, 289.5),
+    (5, "現行の対応", 56.0, 88.0),
+    (5, "新方式", 672.0, 88.0),
+    (5, "回答まで当日中を", 724.0, 225.5),
+    (6, "社内ポータルから", 108.0, 93.2),
+    (7, "一次回答", 676.8, 88.0),
+    (7, "難しい質問は要点", 676.8, 244.0),
+    (9, "問い合わせ対応シ", 56.0, 88.0),
     (9, "社内ポータル・A", 56.0, 619.0),
-    (10, "工数の削減分で、", 108.0, 289.0),
+    (10, "工数の削減分で、", 108.0, 305.0),
     (1, "情報システム部", 96.0, 388.0),
 ]
 
@@ -203,7 +203,7 @@ def test_header_footer_and_lines_match_theme():
         56,
         0,
         1168,
-        52,
+        68,
         "ctr",
     )
     assert title.paras[0].size == 36 and title.paras[0].bold
@@ -211,7 +211,7 @@ def test_header_footer_and_lines_match_theme():
     # 線は同じ太さ (2px) のグレーで、左右の端から 24px 離す
     rects = [s for s in page.shapes if isinstance(s, ep.Rect)]
     lines = [(s.x, s.y, s.w, s.h, s.color) for s in rects]
-    assert lines == [(24, 50, 1232, 2, "B3B3B3"), (24, 668, 1232, 2, "B3B3B3")]
+    assert lines == [(24, 66, 1232, 2, "B3B3B3"), (24, 668, 1232, 2, "B3B3B3")]
     [logo] = shapes_named(page, "ロゴ")
     # footer img: 高さ 34px、右端は 1280 - 56、フッター (高さ 52px) の上下の真ん中
     assert (logo.h, logo.x + logo.w, logo.y) == (34, 1224, 677)
@@ -235,7 +235,7 @@ def test_cover_layout():
 
 
 def test_side_images_match_marp():
-    """image-right / image-left の画像 (Chromium: 幅 588.8、上端 141.2)"""
+    """image-right / image-left の画像 (Chromium: 幅 588.8、上端 149.2)"""
     right = [
         s for s in pages_of()[5].shapes if isinstance(s, ep.Picture) and s.name == "図"
     ]
@@ -243,18 +243,18 @@ def test_side_images_match_marp():
         s for s in pages_of()[6].shapes if isinstance(s, ep.Picture) and s.name == "図"
     ]
     assert [(round(s.x, 1), round(s.y, 1), round(s.w, 1)) for s in right] == [
-        (635.2, 141.2, 588.8)
+        (635.2, 149.2, 588.8)
     ]
     assert [(round(s.x, 1), round(s.y, 1), round(s.w, 1)) for s in left] == [
-        (56.0, 141.2, 588.8)
+        (56.0, 149.2, 588.8)
     ]
 
 
 def test_table_layout_matches_marp():
-    """table クラスの表 (Chromium: 上端 178.5、行の高さ 61、幅 1168)"""
+    """table クラスの表 (Chromium: 上端 186.5、行の高さ 61、幅 1168)"""
     page = pages_of()[7]
     [table] = [s for s in page.shapes if isinstance(s, ep.TableShape)]
-    assert table.y == pytest.approx(179.0)
+    assert table.y == pytest.approx(187.0)
     assert table.row_heights == [61.0] * 6
     assert sum(table.col_widths) == pytest.approx(1168)
     header = table.rows[0][0]
@@ -267,23 +267,23 @@ def test_normal_table_fits_its_text():
     """ふつうの表は文字に合わせた幅 (列は文字が 1 行に収まる幅)"""
     page = pages_of()[9]
     [table] = [s for s in page.shapes if isinstance(s, ep.TableShape)]
-    assert (table.x, table.y) == (56.5, 72.5)
+    assert (table.x, table.y) == (56.5, 88.5)
     assert table.row_heights == [50.0] * 4  # 8 + 33 + 8 + 1
     assert 400 < sum(table.col_widths) < 460
 
 
 def test_image_layout_fills_the_rest():
-    """image クラスの画像は、小見出しと説明の残りの高さいっぱい (Chromium: 121.5、高さ 486.5)"""
+    """image クラスの画像は、小見出しと説明の残りの高さいっぱい (Chromium: 137.5、高さ 470.5)"""
     page = pages_of()[8]
     [pic] = [s for s in page.shapes if isinstance(s, ep.Picture) and s.name == "図"]
-    assert (round(pic.y, 1), round(pic.h, 1)) == (121.5, 486.5)
+    assert (round(pic.y, 1), round(pic.h, 1)) == (137.5, 470.5)
     assert pic.x + pic.w / 2 == pytest.approx(640)
 
 
 def test_center_layout_is_one_box_centered_vertically():
     page = pages_of()[10]
     [body] = shapes_named(page, "本文")
-    assert (body.x, body.y, body.w, body.h, body.anchor) == (56, 72, 1168, 580, "ctr")
+    assert (body.x, body.y, body.w, body.h, body.anchor) == (56, 88, 1168, 564, "ctr")
     h3, p = body.paras
     assert (h3.size, h3.align, p.size, p.align) == (44, "ctr", 34, "ctr")
     assert p.space_before == pytest.approx(22 + 10.2)  # h3 の下 + p の上 (重ねない)
