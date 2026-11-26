@@ -53,13 +53,12 @@ COVER_TITLE_H = SLIDE_H / 2  # 表紙のタイトル (h1) の高さ (下端が�
 COVER_TITLE_PAD = 28
 COVER_LINE = 3
 LOGO_H = 34  # footer img の高さ
+PAGE_NUMBER_SIZE = 24  # ページ番号 (section::after) の文字の大きさ
 
 ACCENT = "1F4E8C"  # --kit-accent / --kit-line
 TEXT = "222222"  # --kit-text
 MUTED = "666666"  # --kit-muted
 WHITE = "FFFFFF"
-H1_COLOR = "224466"  # Marp の default テーマの h1
-H6_COLOR = "59636E"
 QUOTE_COLOR = "59636E"
 BORDER = "D1D9E0"  # 表の罫線、引用の線、コードの枠
 ZEBRA = "F6F8FA"  # 表の偶数行、コードの背景
@@ -743,12 +742,12 @@ def heading_style(level: int, ctx: Context) -> tuple[float, str, float, float]:
     """見出しの (文字の大きさ, 色, 上の余白, 下の余白)"""
     if level == 3 or level == 2:
         if ctx.layout == "center":
-            return 44.0, ACCENT, 0.0, 22.0
+            return 44.0, TEXT, 0.0, 22.0
         if ctx.layout in ("table", "image"):
-            return 30.0, ACCENT, 0.0, 12.0
-        return 30.0, ACCENT, 24.0, 9.0
+            return 30.0, TEXT, 0.0, 12.0
+        return 30.0, TEXT, 24.0, 9.0
     size = {1: 1.6, 4: 1.05, 5: 1.0, 6: 0.9}[level] * ctx.size
-    color = {1: H1_COLOR, 6: H6_COLOR}.get(level, ctx.color)
+    color = ctx.color  # 見出しも本文と同じ黒 (theme.css)
     return size, color, 24.0, 16.0
 
 
@@ -1165,7 +1164,7 @@ class Layout:
             title = blocks.pop(title_index)
             assert isinstance(title, Heading)
             after_title = title_index == 0
-            para = Para(title.runs, 36, 45, ACCENT, bold=True)
+            para = Para(title.runs, 36, 45, TEXT, bold=True)
             shapes.append(
                 TextBox(
                     SIDE, 0, BODY_W, HEADER_H, [para], anchor="ctr", name="タイトル"
@@ -1271,8 +1270,8 @@ class Layout:
         if slide.paginate:
             para = Para(
                 [Run(str(number)), Run(f" / {total}")],
-                18,
-                27,
+                PAGE_NUMBER_SIZE,
+                PAGE_NUMBER_SIZE * 1.5,
                 MUTED,
                 field_slidenum=True,
             )
