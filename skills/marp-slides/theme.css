@@ -21,9 +21,16 @@
   --kit-accent: #1f4e8c;
   --kit-text: #222;
   --kit-muted: #666;
-  --kit-line: #1f4e8c;
-  --kit-header-h: 84px;
-  --kit-footer-h: 56px;
+  --kit-line: #b3b3b3;
+  /* ヘッダーとフッターは同じ高さ・同じ太さの線にし、本文をできるだけ広くとる */
+  --kit-header-h: 52px;
+  --kit-footer-h: 52px;
+  --kit-line-w: 2px;
+  /* 線は左右の端から少し離す */
+  --kit-line-inset: 24px;
+  /* 線と本文の間 */
+  --kit-body-gap-top: 20px;
+  --kit-body-gap-bottom: 16px;
   --kit-side: 56px;
   /* 半角英数は Segoe UI、全角 (日本語) はメイリオ。Segoe UI には日本語の字形が無いので、
      日本語の文字だけ次のメイリオで表示される */
@@ -56,8 +63,8 @@ section {
   width: 1280px;
   height: 720px;
   box-sizing: border-box;
-  padding: calc(var(--kit-header-h) + 28px) var(--kit-side)
-    calc(var(--kit-footer-h) + 20px);
+  padding: calc(var(--kit-header-h) + var(--kit-body-gap-top)) var(--kit-side)
+    calc(var(--kit-footer-h) + var(--kit-body-gap-bottom));
   font-family: var(--kit-font);
   font-size: 26px;
   line-height: 1.5;
@@ -68,17 +75,17 @@ section {
   place-content: normal;
 }
 
-/* ヘッダーの下とフッターの上の線 */
+/* ヘッダーの下とフッターの上の線 (グレー、同じ太さ。ヘッダー・フッターの内側の端に引く) */
 section::before {
   content: "";
   display: block;
   position: absolute;
-  top: var(--kit-header-h);
-  bottom: var(--kit-footer-h);
-  left: 0;
-  right: 0;
-  border-top: 3px solid var(--kit-line);
-  border-bottom: 1px solid var(--kit-line);
+  top: calc(var(--kit-header-h) - var(--kit-line-w));
+  bottom: calc(var(--kit-footer-h) - var(--kit-line-w));
+  left: var(--kit-line-inset);
+  right: var(--kit-line-inset);
+  border-top: var(--kit-line-w) solid var(--kit-line);
+  border-bottom: var(--kit-line-w) solid var(--kit-line);
   pointer-events: none;
 }
 
@@ -211,8 +218,8 @@ section.image-left {
 section.image-right > p:has(> img:only-child),
 section.image-left > p:has(> img:only-child) {
   position: absolute;
-  top: calc(var(--kit-header-h) + 28px);
-  bottom: calc(var(--kit-footer-h) + 20px);
+  top: calc(var(--kit-header-h) + var(--kit-body-gap-top));
+  bottom: calc(var(--kit-footer-h) + var(--kit-body-gap-bottom));
   width: var(--kit-image-w);
   margin: 0;
   display: flex;
