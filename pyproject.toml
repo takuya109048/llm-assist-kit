@@ -22,7 +22,7 @@ py-modules = ["ctx"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".", "commands"]
 markers = ["kit_skills: キットの skills/ を読み込むテスト"]
 
 [tool.ruff]
@@ -34,4 +34,4 @@ ignore = ["E501"]
 
 [tool.pyrefly]
 project-includes = ["ctx.py", "install.py", "commands", "tests", "skills", "tools"]
-search-path = ["."]
+search-path = [".", "commands"]

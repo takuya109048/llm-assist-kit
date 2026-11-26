@@ -17,6 +17,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import gitsafe  # commands/gitsafe.py (このスクリプトと同じフォルダ)
+
 # AGENTS.md の既定の内容。llm-assist-kit での開発の流れ (ctx で貼る → パッチを出す →
 # ctx run で結果を貼る → addcommit / reset) と、どのプロジェクトでも効く具体的なルールを入れ、
 # プロジェクト固有のこと (概要・コマンド) だけを書き足す形にする。
@@ -132,13 +134,6 @@ def use_utf8_output() -> None:
                 pass
 
 
-def is_git_repo(root: Path) -> bool:
-    r = subprocess.run(
-        ["git", "rev-parse", "--is-inside-work-tree"], cwd=root, capture_output=True
-    )
-    return r.returncode == 0
-
-
 def main(argv: list[str]) -> int:
     use_utf8_output()
     ap = argparse.ArgumentParser(
@@ -175,15 +170,27 @@ def main(argv: list[str]) -> int:
         if not shutil.which("git"):
             print("エラー: git が見つかりません (--no-git で git init を省けます)")
             return 1
-        if is_git_repo(root):
+        code, err = gitsafe.rev_parse(root)
+        if code == 0:
             print(
                 f"  {'.git':<11} すでに git のリポジトリなので、git init しませんでした"
             )
-        else:
+        elif not gitsafe.is_dubious(err):
             r = subprocess.run(["git", "init", "-q"], cwd=root)
             if r.returncode != 0:
                 return r.returncode
             print(f"  {'.git':<11} git init しました")
+            code, err = gitsafe.rev_parse(root)
+        if code != 0 and gitsafe.is_dubious(err):
+            # Box などのフォルダは所有者が自分でないため、git が使ってくれない
+            path = gitsafe.safe_directory(err, root)
+            if gitsafe.add_safe_directory(path) != 0:
+                print(err.rstrip())
+                return 1
+            print(
+                f"  {'.git':<11} フォルダの所有者が自分でないため、git の safe.directory に"
+                f"登録しました\n              ({path})"
+            )
 
     print("\nAGENTS.md にプロジェクトの概要や規約を書いてから、ctx で使ってください。")
     if not args.no_git:
