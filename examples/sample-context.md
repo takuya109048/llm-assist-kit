@@ -169,7 +169,7 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 - 説明: スライド (プレゼン資料) を頼まれたら、Marp の Markdown を決まった形 (表紙 + ヘッダー/フッター付きの本文) で作り、PDF などに書き出すコマンドを示す
 - フォルダ: `C:/tools/llm-assist-kit/skills/marp-slides/`
-- ファイル: `C:/tools/llm-assist-kit/skills/marp-slides/assets/background.png`, `C:/tools/llm-assist-kit/skills/marp-slides/assets/logo.png`, `C:/tools/llm-assist-kit/skills/marp-slides/assets/placeholder.svg`, `C:/tools/llm-assist-kit/skills/marp-slides/build.py`, `C:/tools/llm-assist-kit/skills/marp-slides/editable_pptx.py`, `C:/tools/llm-assist-kit/skills/marp-slides/example.md`, `C:/tools/llm-assist-kit/skills/marp-slides/marp.zip`, `C:/tools/llm-assist-kit/skills/marp-slides/theme.css`
+- ファイル: `C:/tools/llm-assist-kit/skills/marp-slides/assets/background.png`, `C:/tools/llm-assist-kit/skills/marp-slides/assets/example-flow.svg`, `C:/tools/llm-assist-kit/skills/marp-slides/assets/logo.png`, `C:/tools/llm-assist-kit/skills/marp-slides/assets/placeholder.svg`, `C:/tools/llm-assist-kit/skills/marp-slides/build.py`, `C:/tools/llm-assist-kit/skills/marp-slides/editable_pptx.py`, `C:/tools/llm-assist-kit/skills/marp-slides/example.md`, `C:/tools/llm-assist-kit/skills/marp-slides/marp.zip`, `C:/tools/llm-assist-kit/skills/marp-slides/theme.css`
 
 ### いつ使うか
 
@@ -279,6 +279,15 @@ footer: "![logo](assets/logo.png)"
 7. 背景やロゴにユーザー自身の画像を使う場合は、`assets/background.png` / `assets/logo.png` を
    その画像のパス (スライドの Markdown からの相対パス) に書き換えます。
 
+### 文字の強調 (色を変える)
+
+- いちばん伝えたい言葉は `*言葉*` (アスタリスク 1 つで囲む) と書くと、**赤の太字**になります (斜体にはなりません)。
+- `**言葉**` (アスタリスク 2 つ) は黒の太字です。色を変えるほどではない強調に使います。
+- 色の強調は 1 枚に 1〜2 か所までにします (多いと目立たなくなります)。見出し (`##` `###`) の中には使いません。
+- 囲む言葉の両端に句読点やかっこを入れません (`*重要。*` や `*「重要」*` は強調になりません)。
+  `回答までに*平均 2 日*かかる` のように、言葉だけを囲みます。
+- HTML (`<span style="color: ...">` など) や、ほかの色は使いません。
+
 ### 本文のレイアウト (2 枚目以降)
 
 内容に合わせて、`## タイトル` の前に `<!-- _class: ... -->` を 1 行書くと、次のレイアウトにできます。
@@ -363,9 +372,43 @@ footer: "![logo](assets/logo.png)"
   画像の前に `###` 小見出し、後ろに 1 行の説明 (キャプション) を書いてもかまいません。
 - `center` は文字が大きく中央ぞろえになります。`###` 小見出し 1 つ (いちばん伝えたいこと) と 1〜2 行の段落、
   または 3 行程度までの短い箇条書きにします。長い文章や表は書きません。
-- 使う画像がまだ無いときは `assets/placeholder.svg` (仮の画像) を書き、差し替えるよう一言添えます
-  (仮の画像のファイルは、書き出し (`slidepdf` / `slidepptx`) のときにコピーされます)。
+- 図 (流れ・構成・関係) で表せる画像は、下の「図を SVG で作る」で作って貼ります。
+- 写真や画面のスクリーンショットなど、あなたが作れない画像がまだ無いときは、`assets/placeholder.svg` (仮の画像) を書き、
+  差し替えるよう一言添えます (仮の画像のファイルは、書き出し (`slidepdf` / `slidepptx`) のときにコピーされます)。
 - 画像を左右に置くために `![bg right](...)` や HTML は使いません (ヘッダーとフッターの線が崩れます)。
+
+### 図を SVG で作る (フロー図・構成図など)
+
+次のどちらかのときは、図を SVG ファイルとして作り、スライドに貼ります (作ってよいかを確認せず、そのまま作ります)。
+
+- **ユーザーが図を求めたとき** (「フロー図を入れて」「構成図にして」など)。
+- **図のほうが伝わるとあなたが判断したとき**。手順・業務の流れ、システムの構成やつながり、
+  関係者の役割分担、スケジュールの流れ、比較の軸など、箇条書きだけでは関係が見えにくい内容です。
+  箇条書きで十分なものまで図にはしません (目安は資料全体で 1〜3 枚)。
+
+図を作ったときは、回答の説明に「〇〇のスライドに図を入れた」と一言添えます。
+
+- 図は `slides/assets/<図の名前>.svg` (スライドの Markdown と同じフォルダの `assets/`) に、
+  スライドと同じパッチの `*** Add File:` で作ります。スライドには `![](assets/<図の名前>.svg)` と書きます。
+- 置き場所は `image` (真ん中に大きく)・`image-right` / `image-left` (テキストの横) のレイアウトにします。
+- 大きさは置き場所に合わせ、`<svg>` に `width`・`height`・`viewBox` を同じ値で書きます (この大きさのまま表示されます)。
+  - `image`: `width="1100" height="440" viewBox="0 0 1100 440"` (前後に `###` と説明を書くとき)
+  - `image-right` / `image-left`: `width="560" height="480" viewBox="0 0 560 480"`
+- 見た目はスライドに合わせます。
+  - 文字: `font-family="Segoe UI, Meiryo, sans-serif"`、大きさは 20〜28 (小さすぎると読めません)、色は `#222222`
+    (補足は `#666666`、強調は `#d32f2f`)
+  - 箱: `<rect rx="10" fill="#f3f5f8" stroke="#b3b3b3" stroke-width="2"/>`。主役の箱だけ
+    `fill="#e8eef6" stroke="#1f4e8c" stroke-width="3"` にします
+  - 線と矢印: `stroke="#666666" stroke-width="3"`。矢印の先は `<polygon>` の三角形で描きます
+    (PowerPoint で崩れないように `marker` は使いません)。戻りや補助の線は `stroke-dasharray="10 8"`
+- SVG は自動で折り返さないので、文字は短くし、箱の幅を「文字数 × 文字の大きさ + 40」以上にします。
+  2 行にするときは `<text>` を 2 つ書きます。文字を箱の真ん中に置くときは `text-anchor="middle"` を使い、
+  縦の位置は `y` で決めます (`dominant-baseline` は使いません)。
+- 使うのは `rect`・`line`・`polyline`・`polygon`・`circle`・`path`・`text` だけにします。
+  `<style>`・`class`・`<foreignObject>`・`filter`・外部の画像やフォントは使いません。
+- 見本: `C:/tools/llm-assist-kit/skills/marp-slides/assets/example-flow.svg` (見本のスライド `example.md` の「システム構成」で使っています)。
+- PowerPoint (`slidepptx`) では、図は SVG の画像として入ります。PowerPoint で図を右クリックして
+  「図形に変換」すると、箱や文字を個別に編集できると伝えてください。
 
 ### 書き出し
 

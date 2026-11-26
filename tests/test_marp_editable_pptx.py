@@ -274,12 +274,28 @@ def test_normal_table_fits_its_text():
     assert 400 < sum(table.col_widths) < 460
 
 
-def test_image_layout_fills_the_rest():
-    """image クラスの画像は、小見出しと説明の残りの高さいっぱい (Chromium: 137.5、高さ 470.5)"""
+def test_image_layout_places_the_svg_figure():
+    """image クラスの図 (1100x440 の SVG) は、小見出しと説明の間 (高さ 470.5) の真ん中に、
+    そのままの大きさで置く (Chromium: x 90、y 152.8)"""
     page = pages_of()[8]
     [pic] = [s for s in page.shapes if isinstance(s, ep.Picture) and s.name == "図"]
-    assert (round(pic.y, 1), round(pic.h, 1)) == (137.5, 470.5)
-    assert pic.x + pic.w / 2 == pytest.approx(640)
+    assert pic.path.name == "example-flow.svg"
+    assert (round(pic.x, 1), round(pic.y, 1), pic.w, pic.h) == (90.0, 152.8, 1100, 440)
+
+
+def test_emphasis_is_red_bold_not_italic():
+    """*文字* は斜体にせず、赤の太字にする (theme.css の section em)"""
+    [slide] = slides_of("## A\n\n- 回答までに*平均 2 日*かかる\n")
+    page = ep.Layout(Path("."), []).slide(slide, 1, 1)
+    writer = ep.SlideWriter(ep.Package())
+    xml = writer.xml(page)
+    run = re.search(r"<a:r><a:rPr ([^>]*)>(.*?)</a:rPr><a:t>平均 2 日</a:t>", xml)
+    assert run
+    assert 'b="1"' in run.group(1) and 'i="1"' not in run.group(1)
+    assert f'<a:srgbClr val="{ep.HIGHLIGHT}"/>' in run.group(2)
+    css = (SKILL / "theme.css").read_text(encoding="utf-8")
+    assert f"--kit-highlight: #{ep.HIGHLIGHT.lower()};" in css
+    assert "font-style: normal;" in css
 
 
 def test_center_layout_is_one_box_centered_vertically():
@@ -391,6 +407,7 @@ def test_images_are_embedded(example_pptx: Path):
         "ppt/media/image1.png",
         "ppt/media/image2.png",
         "ppt/media/image3.svg",
+        "ppt/media/image4.svg",
     ]
 
 
