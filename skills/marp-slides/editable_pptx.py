@@ -38,11 +38,15 @@ from xml.etree import ElementTree
 SLIDE_W = 1280
 SLIDE_H = 720
 EMU_PER_PX = 9525  # 1px = 1/96 インチ = 9525 EMU
-HEADER_H = 84  # --kit-header-h
-FOOTER_H = 56  # --kit-footer-h
+HEADER_H = 52  # --kit-header-h
+FOOTER_H = 52  # --kit-footer-h
+LINE_W = 2  # --kit-line-w (ヘッダー・フッターの線の太さ)
+LINE_INSET = 24  # --kit-line-inset (線の左右の端からの距離)
+BODY_GAP_TOP = 20  # --kit-body-gap-top
+BODY_GAP_BOTTOM = 16  # --kit-body-gap-bottom
 SIDE = 56  # --kit-side
-BODY_TOP = HEADER_H + 28
-BODY_BOTTOM = SLIDE_H - (FOOTER_H + 20)
+BODY_TOP = HEADER_H + BODY_GAP_TOP
+BODY_BOTTOM = SLIDE_H - (FOOTER_H + BODY_GAP_BOTTOM)
 BODY_LEFT = SIDE
 BODY_W = SLIDE_W - 2 * SIDE
 COLS_GAP = 64  # section.cols の column-gap
@@ -55,7 +59,8 @@ COVER_LINE = 3
 LOGO_H = 34  # footer img の高さ
 PAGE_NUMBER_SIZE = 24  # ページ番号 (section::after) の文字の大きさ
 
-ACCENT = "1F4E8C"  # --kit-accent / --kit-line
+ACCENT = "1F4E8C"  # --kit-accent
+LINE = "B3B3B3"  # --kit-line (ヘッダー・フッターの線)
 TEXT = "222222"  # --kit-text
 MUTED = "666666"  # --kit-muted
 WHITE = "FFFFFF"
@@ -1146,9 +1151,12 @@ class Layout:
         shapes: list[Shape] = []
         for bg in slide.backgrounds:
             self.background(bg, shapes)
-        shapes.append(Rect(0, HEADER_H, SLIDE_W, 3, ACCENT, "ヘッダーの線"))
+        line_w = SLIDE_W - 2 * LINE_INSET
         shapes.append(
-            Rect(0, SLIDE_H - FOOTER_H - 1, SLIDE_W, 1, ACCENT, "フッターの線")
+            Rect(LINE_INSET, HEADER_H - LINE_W, line_w, LINE_W, LINE, "ヘッダーの線")
+        )
+        shapes.append(
+            Rect(LINE_INSET, SLIDE_H - FOOTER_H, line_w, LINE_W, LINE, "フッターの線")
         )
         blocks = list(slide.blocks)
         title_index = next(
