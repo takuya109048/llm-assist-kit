@@ -64,6 +64,9 @@ python install.py
 | `addcommit` | `git add -A` と `git commit -m` をまとめて行う。`addcommit メッセージ` (空白で区切った語はつなげて 1 つのメッセージにする) |
 | `reset` | `git reset --hard HEAD` と `git clean -fd` をまとめて行い、最後のコミットの状態に戻す。消える内容を表示して確認してから実行 (`reset -y` で確認なし)。`.gitignore` で無視しているファイルは残る |
 | `init` | 新しいプロジェクトのフォルダで実行すると、`AGENTS.md` (冒頭プロンプトのひな形)・`.ctxignore`・`.gitignore` を作り、`git init` する。すでにあるファイルは上書きしない。`init <フォルダ>` でフォルダを指定 (無ければ作る)、`init --no-git` で git init を省く。Box・OneDrive などで git が「dubious ownership」と言うフォルダは、git の `safe.directory` に登録して使えるようにする |
+| `slideinit` | スライドのフォルダ (既定 `slides/`、`slideinit <フォルダ>` で指定) に、既定の画像 (`assets/background.svg`・`logo.svg`・`placeholder.svg`)・テーマ (`assets/kit-slides.css`)・VS Code のプレビュー用の設定 (`.vscode/settings.json`) をそろえる。何度実行しても同じで、既にある画像は上書きしない。marp-slides スキルは、スライドを新しく作るパッチの前にこれを入れる |
+| `slidepdf` | スライドを PDF にする。`slidepdf slides/発表.md` (省くと `slides/` の `*.md` をすべて) |
+| `slidepptx` | スライドを文字を編集できる PowerPoint (PPTX) にする。使い方は `slidepdf` と同じ |
 
 ### 使い方 (PowerShell、プロジェクトのフォルダで)
 
@@ -211,9 +214,14 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
   文字を編集できる PowerPoint [`examples/marp-slides-example.pptx`](examples/marp-slides-example.pptx)
 
 ```powershell
-python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md          # PDF
-python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md --pptx   # 文字を編集できる PowerPoint
+slideinit                     # slides/ に既定の画像・テーマ・VS Code の設定をそろえる (最初の 1 回)
+slidepdf slides/発表.md        # PDF
+slidepptx slides/発表.md       # 文字を編集できる PowerPoint
 ```
+
+- スライドを新しく作るとき、LLM はパッチのコマンドと同じコードブロックに `slideinit` を入れて出します
+  (1 回貼れば、フォルダの準備とスライドの作成がまとめて済みます)
+- 関数を使わない場合は `python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md` (PowerPoint は `--pptx` を付ける)
 
 - `--pptx` は Marp CLI を使わず、[`editable_pptx.py`](skills/marp-slides/editable_pptx.py)
   (標準ライブラリだけ) が Markdown から直接 PPTX を作ります。Chrome / Edge / LibreOffice も不要です。

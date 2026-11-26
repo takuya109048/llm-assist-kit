@@ -8,6 +8,50 @@ description: スライド (プレゼン資料) を頼まれたら、Marp の Mar
 スライドは [Marp](https://marp.app/) の Markdown ファイル (例 `slides/発表名.md`) として作ります。
 ファイルの作成・修正は、ほかのファイルと同じ方法 (apply-patch スキルがあればそのパッチ) で行います。
 
+### 新しく作るとき (最初の 1 回は slideinit もいっしょに)
+
+スライドの Markdown を新しく作るパッチを出すときは、**同じ 1 つのコードブロックの中で、パッチより前に
+`slideinit` を実行**するようにします。`slideinit` は、スライドのフォルダ (既定 `slides/`) に既定の画像
+(`assets/background.svg`・`logo.svg`・`placeholder.svg`)・テーマ (`assets/kit-slides.css`)・
+VS Code のプレビュー用の設定 (`.vscode/settings.json`) をそろえる関数です (何度実行しても同じで、既にある画像は上書きしません)。
+
+- apply-patch スキルのコマンドの 1 行目 (`$OutputEncoding = ...`) の次の行に `slideinit` を 1 行入れ、
+  その後にいつものパッチ (`@'` 〜 `'@ | python ...`) を続けます。コードブロックは 1 つです。
+- スライドを `slides/` 以外のフォルダに置くときは、`slideinit <フォルダ>` と書きます。
+- 2 回目以降 (作ったスライドの修正、同じフォルダへのスライドの追加) は `slideinit` を付けず、パッチだけを出します。
+
+```powershell
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+slideinit
+@'
+*** Begin Patch
+*** Add File: slides/発表名.md
++---
++marp: true
++theme: kit-slides
++paginate: true
++footer: "![logo](assets/logo.svg)"
++---
++
++<!-- _class: cover -->
++
++![bg](assets/background.svg)
++
++# 発表のタイトル
++
++〇〇部 △△課
++2026年11月25日
++
++---
++
++## スライドのタイトル
++
++- 要点 1
++- 要点 2
+*** End Patch
+'@ | python ${CTX} run -- python ${SKILL_DIR}/../apply-patch/apply.py -f -
+```
+
 ### スライドの形 (必ずこの形)
 
 - **1 枚目は表紙**。背景画像の上、中央の横線の上側にタイトル、下側に部署名と日付 (すべて左寄せ)。
@@ -155,23 +199,30 @@ footer: "![logo](assets/logo.svg)"
 
 ### 書き出し
 
-スライドのファイルを作ったら (または修正したら)、PDF に書き出すコマンドを示します
-(`<スライドのパス>` は実際のパスに置き換える)。
+スライドのファイルを作ったら (または修正したら)、書き出すコマンドを示します
+(`<スライドのパス>` は実際のパスに置き換える)。PDF は `slidepdf`、PowerPoint は `slidepptx` です。
 
 ```powershell
-python ${CTX} run -- python ${SKILL_DIR}/build.py "<スライドのパス>"
+slidepdf "<スライドのパス>"
 ```
 
-- HTML にするときは末尾に `--html`、PowerPoint にするときは `--pptx` を付けます。
-- `--pptx` の PowerPoint は、文字・箇条書き・番号・表が PowerPoint のテキストや表として編集でき、
+```powershell
+slidepptx "<スライドのパス>"
+```
+
+- パスを省くと `slides/` の `*.md` をすべて書き出します。フォルダを指定するとその中の `*.md` を書き出します。
+- 出力はスライドと同じ場所に、同じ名前で拡張子を `.pdf` / `.pptx` にしたファイルです。
+- `slidepptx` の PowerPoint は、文字・箇条書き・番号・表が PowerPoint のテキストや表として編集でき、
   位置はテーマと同じになります (Python だけで作るので、Marp CLI・ブラウザ・ほかのソフトは不要)。
   この書き方 (上の決まり) から外れた Markdown や HTML は再現されません。文字の折り返し位置が PDF と
   1 文字ほど違うことがあると伝えてください。画像は SVG のまま入るので、PowerPoint 2016 以降で開くよう伝えてください。
-- スライドと同じフォルダの `assets/` に `background.svg`・`logo.svg`・`placeholder.svg` が無ければ、既定の画像がコピーされます。
-  既にあるファイルは上書きされないので、同じ名前の画像を置けば差し替えられます。
-- VS Code のプレビューでも同じ見た目になるように、テーマを `assets/kit-slides.css` にコピーし、
-  ワークスペースの `.vscode/settings.json` に登録します (`theme: kit-slides` の警告が消えます。
-  消えないときは VS Code のウィンドウの再読み込みを案内してください)。
+- 書き出しのときも `slideinit` と同じ準備 (足りない画像・テーマ・VS Code の設定) をします。
+  既にある画像は上書きされないので、同じ名前の画像を置けば差し替えられます。
+- VS Code のプレビューで `theme: kit-slides` が「not recognized」と警告されるときは、`slideinit` を実行し、
+  VS Code のウィンドウの再読み込みを案内してください。
+- `slidepdf` などの関数が見つからないと言われたら、キットのフォルダで `python install.py` を実行して
+  PowerShell を開き直すよう案内してください。関数を使わない場合は
+  `python ${CTX} run -- python ${SKILL_DIR}/build.py "<スライドのパス>"` (PowerPoint は末尾に `--pptx`) でも書き出せます。
 - Marp CLI は同梱の `marp.zip` の単体版を使うので、Node.js は不要です (Windows)。
   PDF の書き出しには Edge か Chrome を使います。
   「Marp CLI が見つかりません」と表示されたら (zip にその OS 用が無い場合)、Node.js のインストールを案内してください。

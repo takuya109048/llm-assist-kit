@@ -87,14 +87,14 @@ def test_copies_missing_assets_only(slides: Path):
     assets.mkdir()
     (assets / "logo.svg").write_text("mine", encoding="utf-8")
 
-    copied = build.copy_default_assets(slides)
+    copied = build.copy_default_assets(slides.parent)
 
     assert copied == [assets / "background.svg", assets / "placeholder.svg"]
     assert (assets / "logo.svg").read_text(encoding="utf-8") == "mine"
     assert (assets / "background.svg").read_bytes() == (
         SKILL / "assets" / "background.svg"
     ).read_bytes()
-    assert build.copy_default_assets(slides) == []
+    assert build.copy_default_assets(slides.parent) == []
 
 
 def fake_marp_zip(path: Path, key: str, data: bytes = b"fake marp") -> Path:
@@ -276,7 +276,7 @@ def test_vscode_preview_copies_theme_and_registers_it(tmp_path: Path):
     slides.parent.mkdir(parents=True)
     slides.write_text("# t\n", encoding="utf-8")
 
-    messages = build.setup_vscode_preview(slides, workspace)
+    messages = build.setup_vscode_preview(slides.parent, workspace)
 
     theme = slides.parent / "assets" / "kit-slides.css"
     assert theme.read_bytes() == build.THEME.read_bytes()
@@ -285,7 +285,7 @@ def test_vscode_preview_copies_theme_and_registers_it(tmp_path: Path):
     }
     assert len(messages) == 2
     # 2 回目は何もしない
-    assert build.setup_vscode_preview(slides, workspace) == []
+    assert build.setup_vscode_preview(slides.parent, workspace) == []
 
 
 def test_vscode_settings_keep_other_values(tmp_path: Path):
@@ -298,7 +298,7 @@ def test_vscode_settings_keep_other_values(tmp_path: Path):
     slides = tmp_path / "a" / "b" / "s.md"
     slides.parent.mkdir(parents=True)
     # 今のフォルダがワークスペースの外でも、.vscode のあるフォルダを使う
-    build.register_vscode_theme(slides, tmp_path / "a" / "b")
+    build.register_vscode_theme(slides.parent, tmp_path / "a" / "b")
     assert read_settings(tmp_path) == {
         "editor.wordWrap": "on",
         "markdown.marp.themes": ["./other.css", "./a/b/assets/kit-slides.css"],
@@ -310,7 +310,7 @@ def test_vscode_settings_with_comments_are_not_changed(tmp_path: Path):
     settings.parent.mkdir()
     text = '{\n  // コメント\n  "editor.wordWrap": "on"\n}\n'
     settings.write_text(text, encoding="utf-8")
-    message = build.register_vscode_theme(tmp_path / "s.md", tmp_path)
+    message = build.register_vscode_theme(tmp_path, tmp_path)
     assert message and "./assets/kit-slides.css" in message
     assert settings.read_text(encoding="utf-8") == text
 
@@ -319,11 +319,11 @@ def test_workspace_root(tmp_path: Path):
     slides = tmp_path / "ws" / "slides" / "s.md"
     slides.parent.mkdir(parents=True)
     # .vscode が無ければ、スライドが今のフォルダの中ならそこ、外ならスライドのフォルダ
-    assert build.workspace_root(slides, tmp_path / "ws") == tmp_path / "ws"
-    assert build.workspace_root(slides, tmp_path / "other") == slides.parent
+    assert build.workspace_root(slides.parent, tmp_path / "ws") == tmp_path / "ws"
+    assert build.workspace_root(slides.parent, tmp_path / "other") == slides.parent
     (tmp_path / ".vscode").mkdir()
-    assert build.workspace_root(slides, tmp_path / "ws") == tmp_path
+    assert build.workspace_root(slides.parent, tmp_path / "ws") == tmp_path
 
 
 def test_vscode_preview_is_skipped_inside_the_kit():
-    assert build.setup_vscode_preview(SKILL / "example.md", SKILL.parent.parent) == []
+    assert build.setup_vscode_preview(SKILL, SKILL.parent.parent) == []
