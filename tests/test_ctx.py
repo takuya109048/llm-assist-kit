@@ -369,7 +369,7 @@ def test_binary_and_size_are_reported(project: Project, mode: list[str]):
 
 def test_excludes_self_and_prompt_file(project: Project, mode: list[str]):
     shutil.copy(ctx.__file__, project.root / "ctx.py")
-    project.write("CONTEXT_PROMPT.md", "MY PROMPT")
+    project.write("AGENTS.md", "MY PROMPT")
     project.write("a.py", "x")
     r = subprocess.run(
         [sys.executable, str(project.root / "ctx.py"), "--list", *mode],
@@ -381,7 +381,7 @@ def test_excludes_self_and_prompt_file(project: Project, mode: list[str]):
     assert r.returncode == 0, r.stderr
     assert "a.py" in r.stdout
     assert "ctx.py" not in r.stdout
-    assert "CONTEXT_PROMPT.md" not in r.stdout
+    assert "AGENTS.md" not in r.stdout
 
 
 @pytest.mark.skipif(not HAS_GIT, reason="git が無い")
@@ -429,7 +429,7 @@ def test_prompt_file_priority(project: Project):
     project.write("a.py", "x")
     project.write(".ctxprompt.md", "SECOND")
     assert project.stdout("--no-git").startswith("SECOND")
-    project.write("CONTEXT_PROMPT.md", "FIRST")
+    project.write("AGENTS.md", "FIRST")
     assert project.stdout("--no-git").startswith("FIRST")
 
 

@@ -8,6 +8,7 @@
 | [`sample-context.md`](sample-context.md) | 実際に取得したコンテキスト(クリップボードに入る内容そのもの) |
 | [`sample-llm-answer.md`](sample-llm-answer.md) | LLM の回答の例(apply-patch スキルに従った、パッチを適用する PowerShell コマンド入り) |
 | [`sample-run-result.md`](sample-run-result.md) | その回答のパッチを `ctx.py run` 経由で `--dry-run` した結果(LLM に貼り返す内容そのもの) |
+| [`marp-slides-example.pdf`](marp-slides-example.pdf) | marp-slides スキルの見本 [`example.md`](../skills/marp-slides/example.md) (表紙と全レイアウト) を書き出した PDF |
 
 スキルはキットの [`skills/`](../skills/) にあるもの (プロジェクトの外) を使っています。
 キットの場所はマシンごとに違うので、例では `C:/tools/llm-assist-kit` に置いたものとして表しています。
@@ -40,8 +41,9 @@ PS> ctx --list
      100 tok  web/app.js
       49 tok  web/index.html
        skill  apply-patch  (C:/tools/llm-assist-kit/skills/apply-patch/SKILL.md)
+       skill  marp-slides  (C:/tools/llm-assist-kit/skills/marp-slides/SKILL.md)
 
-16 ファイル / スキル 1 / 推定 4,207 トークン
+16 ファイル / スキル 2 / 推定 6,828 トークン
 ```
 
 ## `.ctxignore` の全パターン
@@ -68,7 +70,7 @@ PS> ctx --list
 
 | ファイル | 理由 |
 | --- | --- |
-| `CONTEXT_PROMPT.md` | 冒頭プロンプトとして先頭に入る |
+| `AGENTS.md` | 冒頭プロンプトとして先頭に入る |
 | `.ctxignore` | 設定ファイル |
 | `.env.example` | 既定の秘密情報パターン `.env.*` |
 | `assets/logo.png` | 既定の画像パターン `*.png` |
@@ -77,7 +79,7 @@ PS> ctx --list
 
 ## スキルとスクリプト実行の流れ
 
-[`sample-context.md`](sample-context.md) の「# スキル」欄に、キットのスキル (`apply-patch`) の `SKILL.md` が入っています。
+[`sample-context.md`](sample-context.md) の「# スキル」欄に、キットのスキル (`apply-patch`、`marp-slides`) の `SKILL.md` が入っています。
 `${SKILL_DIR}` と `${CTX}` は実際のパス (`C:/tools/llm-assist-kit/...`) に置き換わっているので、
 LLM はそのまま実行できるコマンドを示せます。スキルのスクリプトはプロジェクトの外にあるので、
 ツリーやソースコード欄には入りません。

@@ -25,7 +25,7 @@ def apply_patch_body() -> str:
 
 
 def test_kit_has_skills():
-    assert [p.name for p in SKILL_DIRS] == ["apply-patch"]
+    assert [p.name for p in SKILL_DIRS] == ["apply-patch", "marp-slides"]
     for removed in REMOVED_SKILLS:
         assert not (KIT_SKILLS / removed).exists(), removed
 

@@ -27,10 +27,11 @@ LLM はコマンドを実行できないので、スクリプトは自分で Pow
 C:\tools\llm-assist-kit\      ← キット (例)
 ├── ctx.py
 └── skills\                    ← スキル (どのプロジェクトでも使う)
-    └── apply-patch\SKILL.md, apply.py, apply_patch.zip
+    ├── apply-patch\SKILL.md, apply.py, apply_patch.zip
+    └── marp-slides\SKILL.md, build.py, theme.css, marp.zip, assets\
 
 my-project\                    ← 対象プロジェクト
-├── CONTEXT_PROMPT.md          ← (任意) 冒頭プロンプト
+├── AGENTS.md                  ← (任意) 冒頭プロンプト
 ├── .ctxignore                 ← (任意) 追加の除外パターン
 └── src\ ...
 ```
@@ -48,6 +49,9 @@ python install.py
   何度実行しても同じです。キットのフォルダを移したら、もう一度実行してください
 - 実行ポリシーが `Restricted` だとプロファイルが読み込まれません。そのときは注意と、直すコマンドを表示します
   (`python install.py --set-execution-policy` で、現在のユーザーだけ `RemoteSigned` にもできます)
+- 同じフォルダの別のプロファイル (`Microsoft.PowerShell_profile.ps1` や `Microsoft.VSCode_profile.ps1`) に
+  同じ名前の関数やエイリアスが残っていると、そちらが後から読み込まれて優先されます。見つけたら場所を表示するので、
+  古い定義を消してから PowerShell を開き直してください
 - `python install.py --uninstall` で外せます。`--print` で書き込む内容だけ表示します
 - 関数を追加するときは、`install.py` の `FUNCTIONS` に 1 行足して `python install.py` を実行し直します
   (関数の中身のスクリプトは `commands/` に置きます)
@@ -103,7 +107,7 @@ ctx C:\work\other     # 別のフォルダを対象にする
 
 ### 冒頭プロンプト
 
-ルート直下の `CONTEXT_PROMPT.md` → `.ctxprompt.md` → `.ctxprompt` の順に探し、無ければ内蔵の日本語プロンプトを使います。
+ルート直下の `AGENTS.md` → `.ctxprompt.md` → `.ctxprompt` の順に探し、無ければ内蔵の日本語プロンプトを使います。
 プロジェクトの概要・コーディング規約・回答形式などを書いておくと、CLAUDE.md と同じ感覚で使えます。
 
 ### スキル
@@ -115,6 +119,8 @@ Claude Code のスキルと同じ形式です。
 | スキル | 内容 |
 | --- | --- |
 | [`apply-patch`](skills/apply-patch/SKILL.md) | LLM が出したパッチで、ファイルの修正・新規作成・削除・移動をまとめて行う (下記) |
+| [`marp-slides`](skills/marp-slides/SKILL.md) | Marp でスライドを作り、PDF / HTML / PPTX に書き出す (表紙 + ヘッダー/フッター付きの決まった形。下記) |
+| [`marp-slides`](skills/marp-slides/SKILL.md) | Marp でスライドを作り、PDF / HTML / PPTX に書き出す (表紙 + ヘッダー/フッター付きの決まった形。下記) |
 
 スキルを追加するには `skills/<名前>/` に `SKILL.md` (とスクリプト) を置きます。
 
@@ -178,6 +184,46 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
   初回に `skills/apply-patch/.bin/` に取り出して使います
 - zip の作り直し: `python tools/build_apply_patch.py` (Linux で、Rust と mingw-w64 が必要。
   ビルド元のコミットは zip の `BUILD_INFO.txt` に記録されます)
+
+### スライドを作る (marp-slides スキル)
+
+「〇〇の発表資料を作って」と頼むと、LLM が [Marp](https://marp.app/) の Markdown を決まった形で作り、
+書き出しのコマンドを示します。
+
+- 1 枚目は表紙: 背景画像の上、中央の横線の上にタイトル、下に部署名と日付 (左寄せ)
+- 2 枚目以降: ヘッダー (スライドのタイトル) とフッター (左にページ数 / 総ページ数、右にロゴ) を線で本文と区切る
+- 本文のレイアウトは 1 カラムのほか、`<!-- _class: ... -->` で `cols` (テキストの 2 カラム)、
+  `image-right` (右に画像)、`image-left` (左に画像)、`table` (真ん中に大きな表)、
+  `image` (真ん中に大きな画像)、`center` (ど真ん中に大きめのテキスト) を選べます
+- 見た目はテーマ [`theme.css`](skills/marp-slides/theme.css) (`theme: kit-slides`) で決めます。
+  フォントは半角英数が Segoe UI、全角 (日本語) がメイリオです
+- 全パターンを使った見本: [`example.md`](skills/marp-slides/example.md) (11 枚) と、
+  それを書き出した [`examples/marp-slides-example.pdf`](examples/marp-slides-example.pdf)
+
+```powershell
+python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md          # PDF
+python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md --pptx   # PowerPoint (各スライドは画像)
+python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md --pptx-editable  # 文字を編集できる PowerPoint
+```
+
+- `--pptx-editable` は Marp CLI の試験的な機能で、LibreOffice が必要です。文字は編集できますが、
+  箇条書きや表は行ごとのテキストボックスになり、見た目が少し崩れることがあります。
+  英数字と日本語でフォントが変わると LibreOffice がその切れ目で文字の箱を分けてしまうので、
+  書き出しはメイリオ 1 種類のテーマ ([`theme-editable.css`](skills/marp-slides/theme-editable.css)) で行い、
+  その後 PPTX の中で「半角英数は Segoe UI、日本語はメイリオ」を指定し直します。
+  PDF から読み取るときに別の文字になったもの (「⽉」(康煕部首) や縦書き用の「︓」など) も元の文字に戻します
+
+- Marp CLI は [`marp.zip`](skills/marp-slides/marp.zip) に入っている公式の単体版 (Windows x64 用。MIT) を
+  初回に `skills/marp-slides/.bin/` に取り出して使うので、Node.js は不要です。
+  PDF / PPTX の書き出しには Edge か Chrome を使います
+- zip にその OS 用が無ければ、`marp` コマンド、`npx @marp-team/marp-cli` (Node.js が必要) の順に使います
+- zip の作り直し: `python tools/build_marp_zip.py` (`--version v4.5.1` で版を指定、
+  `--targets windows-x86_64,linux-x86_64` で対象を追加。取得したファイルは公開されている SHA-256 と照合します)
+- スライドと同じフォルダの `assets/` に `background.svg` (表紙の背景)・`logo.svg` (ロゴ)・
+  `placeholder.svg` (画像のレイアウト用の仮の画像) が無ければ、
+  既定の画像をコピーします。既にあれば上書きしないので、同じ名前のファイルを置けば差し替えられます
+- テーマを変えたら、見本の PDF を作り直します:
+  `python skills/marp-slides/build.py skills/marp-slides/example.md -o examples/marp-slides-example.pdf`
 
 ### 実行結果のコピー (`run`)
 

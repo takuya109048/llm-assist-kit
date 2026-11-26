@@ -8,6 +8,8 @@
 
 プロファイル (Windows PowerShell 5.1 と PowerShell 7 の両方) の中の
 `# >>> llm-assist-kit >>>` 〜 `# <<< llm-assist-kit <<<` の範囲だけを書き換える。
+同じフォルダの別のプロファイル (Microsoft.PowerShell_profile.ps1 など) に同じ名前の
+関数やエイリアスが残っていると、そちらが優先されて登録した関数が使えないので警告する。
 
 関数を追加するときは、下の FUNCTIONS に 1 行足して、もう一度 `python install.py` を実行する。
 """
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import re
 import shutil
 import subprocess
 import sys
@@ -156,6 +159,93 @@ def write_profile(path: Path, text: str, encoding: str, newline: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 同じ名前の古い定義 (別のプロファイルなど) を探す
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Conflict:
+    path: Path
+    lineno: int
+    name: str
+    line: str
+    alias: bool  # エイリアスは関数より優先される
+
+
+def _definition_pattern(names: list[str]) -> re.Pattern[str]:
+    alt = "|".join(re.escape(n) for n in names)
+    return re.compile(
+        rf"^\s*(?:"
+        rf"(?P<func>function|filter)\s+(?:global:|script:)?(?P<fname>{alt})"
+        rf"|(?P<alias>set-alias|new-alias)\s+(?:-name\s+)?['\"]?(?P<aname>{alt})['\"]?"
+        rf")(?=[\s{{('\"]|$)",
+        re.IGNORECASE,
+    )
+
+
+def profile_files(profile: Path) -> list[Path]:
+    """profile と同じフォルダにある、PowerShell が読み込むプロファイル
+
+    profile.ps1 (全ホスト) のほかに Microsoft.PowerShell_profile.ps1 (コンソール) や
+    Microsoft.VSCode_profile.ps1 (VS Code) があり、こちらは後から読み込まれる。
+    """
+    files = [profile]
+    folder = profile.parent
+    if folder.is_dir():
+        for p in sorted(folder.iterdir()):
+            if p.is_file() and p.name.lower().endswith("profile.ps1") and p != profile:
+                files.append(p)
+    return files
+
+
+def find_conflicts(profile: Path, names: list[str]) -> list[Conflict]:
+    """install.py の管理範囲の外にある、同じ名前の function / filter / エイリアス"""
+    pattern = _definition_pattern(names)
+    found: list[Conflict] = []
+    for path in profile_files(profile):
+        try:
+            text, _, _ = read_profile(path)
+        except OSError:
+            continue
+        inside = False
+        for i, line in enumerate(text.splitlines(), 1):
+            if line.startswith(BEGIN_MARK):
+                inside = True
+                continue
+            if line.startswith(END_MARK):
+                inside = False
+                continue
+            if inside:
+                continue
+            m = pattern.match(line)
+            if not m:
+                continue
+            name = m.group("fname") or m.group("aname")
+            canonical = next(n for n in names if n.lower() == name.lower())
+            found.append(
+                Conflict(path, i, canonical, line.strip(), bool(m.group("alias")))
+            )
+    return found
+
+
+def report_conflicts(conflicts: list[Conflict]) -> None:
+    if not conflicts:
+        return
+    print(
+        "\n注意: 同じ名前の古い定義が残っています。こちらが優先されるため、"
+        "登録した関数が使えないことがあります:"
+    )
+    for c in conflicts:
+        kind = "エイリアス" if c.alias else "関数"
+        print(f"  {c.path}:{c.lineno}: {c.name} ({kind})  {c.line}")
+    print(
+        "  不要なら、その行 (関数なら { } の中身ごと) を削除してから PowerShell を開き直してください。"
+        "\n  (profile.ps1 のあとに Microsoft.*_profile.ps1 が読み込まれ、後の定義が勝ちます。"
+        "\n   エイリアスは関数より優先されます)"
+    )
+
+
+# ---------------------------------------------------------------------------
 # PowerShell への問い合わせ
 # ---------------------------------------------------------------------------
 
@@ -274,6 +364,14 @@ def main(argv: list[str] | None = None) -> int:
     print()
     for f in FUNCTIONS:
         print(f"  {f.name:<8} {f.description}")
+
+    names = [f.name for f in FUNCTIONS]
+    conflicts: list[Conflict] = []
+    for _, path in targets:
+        for c in find_conflicts(path, names):
+            if c not in conflicts:
+                conflicts.append(c)
+    report_conflicts(conflicts)
 
     # 実行ポリシーの確認 (プロファイルを指定したときは確認しない)
     if not args.profile:

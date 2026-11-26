@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <!-- 仮の画像 (画像のレイアウトで、使う画像がまだ無いときに置く) -->
+  <rect width="800" height="600" fill="#e8edf4"/>
+  <rect x="4" y="4" width="792" height="592" fill="none" stroke="#9fb3cc" stroke-width="8" stroke-dasharray="24 16"/>
+  <circle cx="290" cy="230" r="50" fill="#9fb3cc"/>
+  <path d="M160 450 L330 290 L440 390 L520 320 L650 450 Z" fill="#9fb3cc"/>
+  <text x="400" y="530" font-family="Arial, sans-serif" font-size="40" fill="#5b7390" text-anchor="middle">IMAGE</text>
+</svg>

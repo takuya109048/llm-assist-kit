@@ -1,0 +1,367 @@
+/* @theme kit-slides */
+/*
+ * marp-slides スキルのテーマ (16:9, 1280x720)
+ *
+ * - 表紙 (<!-- _class: cover -->): 背景画像の上、中央の横線の上にタイトル、
+ *   下に部署名と日付 (どちらも左寄せ)
+ * - 2 枚目以降: ヘッダー (## のスライドタイトル) とフッター (左にページ数 / 総ページ数、
+ *   右にロゴ) を線でメインと区切る
+ * - 本文のレイアウト (2 枚目以降で <!-- _class: ... --> を付ける):
+ *   cols         テキストの 2 カラム (2 つ目の ### から右のカラム)
+ *   image-right  左にテキスト、右に画像
+ *   image-left   左に画像、右にテキスト
+ *   table        1 カラムで、真ん中に大きな表
+ *   image        1 カラムで、真ん中に大きな画像
+ *   center       1 カラムで、ど真ん中にテキスト (結論・メッセージ・区切り)
+ */
+
+@import "default";
+
+:root {
+  --kit-accent: #1f4e8c;
+  --kit-text: #222;
+  --kit-muted: #666;
+  --kit-line: #1f4e8c;
+  --kit-header-h: 84px;
+  --kit-footer-h: 56px;
+  --kit-side: 56px;
+  /* 半角英数は Segoe UI、全角 (日本語) はメイリオ。Segoe UI には日本語の字形が無いので、
+     日本語の文字だけ次のメイリオで表示される */
+  --kit-font: "Segoe UI", "Meiryo", "メイリオ", sans-serif;
+}
+
+/* 見出し・表なども同じフォントにする (default テーマの指定を上書き) */
+section h1,
+section h2,
+section h3,
+section h4,
+section h5,
+section h6,
+section table,
+section footer {
+  font-family: var(--kit-font);
+}
+
+section {
+  width: 1280px;
+  height: 720px;
+  box-sizing: border-box;
+  padding: calc(var(--kit-header-h) + 28px) var(--kit-side)
+    calc(var(--kit-footer-h) + 20px);
+  font-family: var(--kit-font);
+  font-size: 26px;
+  line-height: 1.5;
+  color: var(--kit-text);
+  background: #fff;
+  /* default テーマの縦中央寄せをやめて上から詰める */
+  display: block;
+  place-content: normal;
+}
+
+/* ヘッダーの下とフッターの上の線 */
+section::before {
+  content: "";
+  display: block;
+  position: absolute;
+  top: var(--kit-header-h);
+  bottom: var(--kit-footer-h);
+  left: 0;
+  right: 0;
+  border-top: 3px solid var(--kit-line);
+  border-bottom: 1px solid var(--kit-line);
+  pointer-events: none;
+}
+
+/* ヘッダー: スライドタイトル (## 見出し) のみ */
+section > h2 {
+  position: absolute;
+  top: 0;
+  left: var(--kit-side);
+  right: var(--kit-side);
+  height: var(--kit-header-h);
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--kit-accent);
+  border: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+section h3 {
+  margin: 0.8em 0 0.3em;
+  font-size: 30px;
+  color: var(--kit-accent);
+}
+
+/* スライドの最初の小見出し (ヘッダーのすぐ下) は上の余白を付けない */
+section > h2 + h3,
+section > h3:first-child {
+  margin-top: 0;
+}
+
+section ul,
+section ol {
+  margin: 0.2em 0;
+}
+
+section table {
+  font-size: 22px;
+}
+
+/* セルの左右の余白を広めにとる。編集できる PPTX (--pptx-editable) は PDF から
+   作り直すため、隣のセルの文字との間が狭いと 1 つのテキストボックスにまとめられて
+   列からはみ出す */
+section table tr th,
+section table tr td {
+  padding: 8px 32px;
+}
+
+section th {
+  background: var(--kit-accent);
+  color: #fff;
+}
+
+/* フッター左: ページ数 / 総ページ数 */
+section::after {
+  content: attr(data-marpit-pagination) " / "
+    attr(data-marpit-pagination-total);
+  position: absolute;
+  top: auto;
+  right: auto;
+  left: var(--kit-side);
+  bottom: 0;
+  height: var(--kit-footer-h);
+  display: flex;
+  align-items: center;
+  padding: 0;
+  font-size: 18px;
+  color: var(--kit-muted);
+}
+
+/* フッター右: ロゴ (footer ディレクティブの画像) */
+footer {
+  position: absolute;
+  top: auto;
+  left: auto;
+  right: var(--kit-side);
+  bottom: 0;
+  height: var(--kit-footer-h);
+  display: flex;
+  align-items: center;
+  padding: 0;
+  margin: 0;
+}
+
+footer img {
+  height: 34px;
+  width: auto;
+  background: transparent;
+}
+
+header {
+  display: none;
+}
+
+/* ---- 本文のレイアウト ---- */
+
+/* cols: テキストの 2 カラム。2 つ目の ### (小見出し) から右のカラムにする */
+section.cols {
+  column-count: 2;
+  column-gap: 64px;
+  column-fill: auto;
+}
+
+section.cols > h3 ~ h3 {
+  break-before: column;
+  margin-top: 0;
+}
+
+section.cols > * {
+  break-inside: avoid;
+}
+
+/* image-right / image-left: 画像だけの段落を片側 (本文の高さいっぱい) に置き、
+   テキストは反対側に寄せる */
+section.image-right,
+section.image-left {
+  --kit-image-w: 46%;
+}
+
+section.image-right {
+  padding-right: calc(var(--kit-image-w) + var(--kit-side) + 32px);
+}
+
+section.image-left {
+  padding-left: calc(var(--kit-image-w) + var(--kit-side) + 32px);
+}
+
+section.image-right > p:has(> img:only-child),
+section.image-left > p:has(> img:only-child) {
+  position: absolute;
+  top: calc(var(--kit-header-h) + 28px);
+  bottom: calc(var(--kit-footer-h) + 20px);
+  width: var(--kit-image-w);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+section.image-right > p:has(> img:only-child) {
+  right: var(--kit-side);
+}
+
+section.image-left > p:has(> img:only-child) {
+  left: var(--kit-side);
+}
+
+section.image-right > p > img:only-child,
+section.image-left > p > img:only-child {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* center: 本文のど真ん中 (上下左右) に、大きめのテキストを中央ぞろえで置く。
+   箇条書きはまとまりごと真ん中に置き、行頭はそろえる */
+section.center {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  font-size: 34px;
+  line-height: 1.6;
+}
+
+section.center > * {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+section.center > h3 {
+  margin: 0 0 0.5em;
+  font-size: 44px;
+}
+
+section.center > p {
+  margin: 0.3em 0;
+}
+
+section.center > ul,
+section.center > ol {
+  text-align: left;
+}
+
+/* table / image: 本文の真ん中 (上下左右) に、大きな表か画像を 1 つ置く。
+   前後に短い説明 (### や段落) を書いてもよい */
+section.table,
+section.image {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+section.table > *,
+section.image > * {
+  flex: 0 0 auto;
+  text-align: center;
+}
+
+section.table > h3,
+section.image > h3 {
+  margin: 0 0 0.4em;
+}
+
+section.table > table {
+  display: table;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  font-size: 24px;
+}
+
+section.table > table th,
+section.table > table td {
+  padding: 12px 32px;
+  text-align: left;
+}
+
+section.table > table th {
+  text-align: center;
+}
+
+/* 画像の段落は残りの高さいっぱいに広げ、画像はその中に収める */
+section.image > p:has(> img:only-child) {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+section.image > p > img:only-child {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+/* 画像の下の説明 (キャプション) */
+section.image > p:not(:has(> img:only-child)) {
+  margin: 0.5em 0 0;
+  font-size: 22px;
+  color: var(--kit-muted);
+}
+
+/* ---- 表紙 ---- */
+
+section.cover {
+  padding: 0 96px;
+  color: #fff;
+  background-color: var(--kit-accent);
+}
+
+section.cover::before,
+section.cover::after,
+section.cover footer {
+  display: none;
+}
+
+/* 上半分: タイトル (下端を中央の線にそろえる)。線はタイトルの下線で引く */
+section.cover > h1 {
+  position: static;
+  height: 50%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 0 28px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  text-align: left;
+  font-size: 56px;
+  line-height: 1.3;
+  font-weight: 700;
+  color: #fff;
+  border-bottom: 3px solid #fff;
+}
+
+/* 下半分: 部署名と日付 */
+section.cover > p {
+  margin: 28px 0 0;
+  text-align: left;
+  font-size: 28px;
+  line-height: 1.7;
+  color: #fff;
+}
+
+section.cover > p + p {
+  margin-top: 0;
+}

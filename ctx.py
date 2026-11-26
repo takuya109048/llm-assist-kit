@@ -42,7 +42,7 @@ from pathlib import Path, PurePosixPath
 # ---------------------------------------------------------------------------
 
 # 冒頭プロンプトとして読み込むファイル (ルート直下、先に見つかったもの)
-PROMPT_FILES = ["CONTEXT_PROMPT.md", ".ctxprompt.md", ".ctxprompt"]
+PROMPT_FILES = ["AGENTS.md", ".ctxprompt.md", ".ctxprompt"]
 
 # 追加の除外パターンファイル (.gitignore 形式)
 IGNORE_FILE = ".ctxignore"
