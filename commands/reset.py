@@ -16,6 +16,8 @@ import shutil
 import subprocess
 import sys
 
+import gitsafe  # commands/gitsafe.py (このスクリプトと同じフォルダ)
+
 
 def use_utf8_output() -> None:
     for stream in (sys.stdout, sys.stderr):
@@ -58,7 +60,7 @@ def main(argv: list[str]) -> int:
         return 1
     code, out = git("rev-parse", "--is-inside-work-tree")
     if code != 0:
-        print(out)
+        print(gitsafe.HINT if gitsafe.is_dubious(out) else out)
         return code
 
     _, changed = git("status", "--short", "--untracked-files=no")

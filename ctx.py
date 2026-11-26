@@ -512,12 +512,24 @@ def git_list_files(root: Path) -> list[str] | None:
     if not shutil.which("git"):
         return None
     try:
-        top = subprocess.run(
+        # git の出力は UTF-8。text=True だと Windows では cp932 で読もうとして、
+        # 日本語のパスを含むエラーメッセージで UnicodeDecodeError になる
+        r = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
             capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
+        )
+        if r.returncode != 0:
+            err = r.stderr.decode("utf-8", errors="replace")
+            if "dubious ownership" in err:
+                print(
+                    "[ctx] 注意: git が「dubious ownership」(フォルダの所有者が自分ではない) "
+                    "と言って、このフォルダのリポジトリを使えません。\n"
+                    "      .gitignore は簡易的に解釈します。llm-assist-kit の `init` を"
+                    "このフォルダで実行すると直ります。",
+                    file=sys.stderr,
+                )
+            return None
+        top = r.stdout.decode("utf-8", errors="replace").strip()
         if not top:
             return None
         out = subprocess.run(

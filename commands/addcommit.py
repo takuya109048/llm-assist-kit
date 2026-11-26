@@ -11,6 +11,9 @@ import io
 import shutil
 import subprocess
 import sys
+from pathlib import Path
+
+import gitsafe  # commands/gitsafe.py (このスクリプトと同じフォルダ)
 
 
 def use_utf8_output() -> None:
@@ -32,6 +35,10 @@ def main(argv: list[str]) -> int:
     if not shutil.which("git"):
         print("エラー: git が見つかりません")
         return 1
+    code, err = gitsafe.rev_parse(Path.cwd())
+    if code != 0:
+        print(gitsafe.HINT if gitsafe.is_dubious(err) else err.rstrip())
+        return code
     code = subprocess.run(["git", "add", "-A"]).returncode
     if code != 0:
         return code
