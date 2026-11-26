@@ -85,16 +85,34 @@ def test_layout_classes_are_in_theme_and_skill(name: str):
 def test_copies_missing_assets_only(slides: Path):
     assets = slides.parent / "assets"
     assets.mkdir()
-    (assets / "logo.svg").write_text("mine", encoding="utf-8")
+    (assets / "logo.png").write_text("mine", encoding="utf-8")
 
     copied = build.copy_default_assets(slides.parent)
 
-    assert copied == [assets / "background.svg", assets / "placeholder.svg"]
-    assert (assets / "logo.svg").read_text(encoding="utf-8") == "mine"
-    assert (assets / "background.svg").read_bytes() == (
-        SKILL / "assets" / "background.svg"
+    assert copied == [assets / "background.png"]
+    assert (assets / "logo.png").read_text(encoding="utf-8") == "mine"
+    assert (assets / "background.png").read_bytes() == (
+        SKILL / "assets" / "background.png"
     ).read_bytes()
     assert build.copy_default_assets(slides.parent) == []
+
+
+def test_default_background_and_logo_are_png():
+    """表紙の背景とロゴの既定は PNG。仮の画像 (placeholder.svg) は残す"""
+    assert build.ASSET_FILES == ["background.png", "logo.png"]
+    for name in build.ASSET_FILES:
+        assert (SKILL / "assets" / name).read_bytes().startswith(b"\x89PNG")
+    assert not (SKILL / "assets" / "background.svg").exists()
+    assert not (SKILL / "assets" / "logo.svg").exists()
+    assert (SKILL / "assets" / build.PLACEHOLDER).is_file()
+
+
+def test_placeholder_is_copied_only_when_used(tmp_path: Path):
+    """仮の画像は、スライドが使っているときだけコピーする (slideinit ではコピーしない)"""
+    build.prepare_folder(tmp_path / "a", tmp_path)
+    assert not (tmp_path / "a" / "assets" / "placeholder.svg").exists()
+    build.prepare_folder(tmp_path / "a", tmp_path, "![](assets/placeholder.svg)")
+    assert (tmp_path / "a" / "assets" / "placeholder.svg").is_file()
 
 
 def fake_marp_zip(path: Path, key: str, data: bytes = b"fake marp") -> Path:
@@ -213,7 +231,7 @@ def test_main_runs_marp_with_theme(
             str(out),
         ]
     ]
-    assert (slides.parent / "assets" / "logo.svg").is_file()
+    assert (slides.parent / "assets" / "logo.png").is_file()
     assert f"作成しました: {out}" in capsys.readouterr().out
 
 

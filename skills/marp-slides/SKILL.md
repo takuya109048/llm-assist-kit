@@ -12,7 +12,7 @@ description: スライド (プレゼン資料) を頼まれたら、Marp の Mar
 
 スライドの Markdown を新しく作るパッチを出すときは、**同じ 1 つのコードブロックの中で、パッチより前に
 `slideinit` を実行**するようにします。`slideinit` は、スライドのフォルダ (既定 `slides/`) に既定の画像
-(`assets/background.svg`・`logo.svg`・`placeholder.svg`)・テーマ (`assets/kit-slides.css`)・
+(表紙の背景 `assets/background.png`・ロゴ `assets/logo.png`)・テーマ (`assets/kit-slides.css`)・
 VS Code のプレビュー用の設定 (`.vscode/settings.json`) をそろえる関数です (何度実行しても同じで、既にある画像は上書きしません)。
 
 - apply-patch スキルのコマンドの 1 行目 (`$OutputEncoding = ...`) の次の行に `slideinit` を 1 行入れ、
@@ -30,12 +30,12 @@ slideinit
 +marp: true
 +theme: kit-slides
 +paginate: true
-+footer: "![logo](assets/logo.svg)"
++footer: "![logo](assets/logo.png)"
 +---
 +
 +<!-- _class: cover -->
 +
-+![bg](assets/background.svg)
++![bg](assets/background.png)
 +
 +# 発表のタイトル
 +
@@ -67,12 +67,12 @@ slideinit
 marp: true
 theme: kit-slides
 paginate: true
-footer: "![logo](assets/logo.svg)"
+footer: "![logo](assets/logo.png)"
 ---
 
 <!-- _class: cover -->
 
-![bg](assets/background.svg)
+![bg](assets/background.png)
 
 # 発表のタイトル
 
@@ -98,7 +98,7 @@ footer: "![logo](assets/logo.svg)"
 決まり:
 
 1. 先頭のフロントマター (`marp` 〜 `footer`) はこのまま書きます。`footer` はロゴの画像で、全ページ右下に出ます。
-2. 表紙は `<!-- _class: cover -->`、`![bg](assets/background.svg)`、`# タイトル`、
+2. 表紙は `<!-- _class: cover -->`、`![bg](assets/background.png)`、`# タイトル`、
    その下に部署名と日付を **改行で 2 行に並べた 1 つの段落** で書きます (間に空行を入れない)。
    表紙には `#` 以外の見出しや箇条書きを書きません。
 3. 2 枚目以降は、各スライドの最初に **`## タイトル` を 1 つだけ** 書きます (これがヘッダーになります)。
@@ -107,7 +107,7 @@ footer: "![logo](assets/logo.svg)"
 5. 1 枚に詰め込みすぎないでください。目安は箇条書き 6 行、表 6 行程度まで。あふれる内容は複数のスライドに分けます。
 6. 日付をユーザーが指定しなければ、今日の日付を `YYYY年M月D日` で書きます。部署名が分からなければ
    `〇〇部` のような仮の値を入れ、差し替えるよう一言添えます。
-7. 背景やロゴにユーザー自身の画像を使う場合は、`assets/background.svg` / `assets/logo.svg` を
+7. 背景やロゴにユーザー自身の画像を使う場合は、`assets/background.png` / `assets/logo.png` を
    その画像のパス (スライドの Markdown からの相対パス) に書き換えます。
 
 ### 本文のレイアウト (2 枚目以降)
@@ -194,7 +194,8 @@ footer: "![logo](assets/logo.svg)"
   画像の前に `###` 小見出し、後ろに 1 行の説明 (キャプション) を書いてもかまいません。
 - `center` は文字が大きく中央ぞろえになります。`###` 小見出し 1 つ (いちばん伝えたいこと) と 1〜2 行の段落、
   または 3 行程度までの短い箇条書きにします。長い文章や表は書きません。
-- 使う画像がまだ無いときは `assets/placeholder.svg` (仮の画像) を書き、差し替えるよう一言添えます。
+- 使う画像がまだ無いときは `assets/placeholder.svg` (仮の画像) を書き、差し替えるよう一言添えます
+  (仮の画像のファイルは、書き出し (`slidepdf` / `slidepptx`) のときにコピーされます)。
 - 画像を左右に置くために `![bg right](...)` や HTML は使いません (ヘッダーとフッターの線が崩れます)。
 
 ### 書き出し

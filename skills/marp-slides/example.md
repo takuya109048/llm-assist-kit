@@ -2,12 +2,12 @@
 marp: true
 theme: kit-slides
 paginate: true
-footer: "![logo](assets/logo.svg)"
+footer: "![logo](assets/logo.png)"
 ---
 
 <!-- _class: cover -->
 
-![bg](assets/background.svg)
+![bg](assets/background.png)
 
 # 社内問い合わせ対応の AI 化について
 

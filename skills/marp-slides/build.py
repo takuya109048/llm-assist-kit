@@ -7,8 +7,9 @@
     python build.py slides.md -o out/deck.pdf
 
 - テーマ (theme.css) はこのスキルのものを使う (Markdown では `theme: kit-slides`)
-- スライドと同じフォルダの assets/ に、表紙の背景 (background.svg)・ロゴ (logo.svg)・
-  仮の画像 (placeholder.svg) が無ければ既定の画像をコピーする。既にあるファイルは上書きしないので、
+- スライドと同じフォルダの assets/ に、表紙の背景 (background.png)・ロゴ (logo.png) が
+  無ければ既定の画像をコピーする。仮の画像 (placeholder.svg) は、スライドが使っているときだけ
+  コピーする。既にあるファイルは上書きしないので、
   同じ名前の画像を置けば差し替えられる
 - Marp CLI は、同じフォルダの marp.zip に入っている単体版 (Node.js 不要) を
   .bin/ に取り出して使う。zip にこの OS 用が無ければ、`marp` コマンド、
@@ -40,7 +41,10 @@ from types import ModuleType
 SKILL_DIR = Path(__file__).resolve().parent
 THEME = SKILL_DIR / "theme.css"
 DEFAULT_ASSETS = SKILL_DIR / "assets"
-ASSET_FILES = ["background.svg", "logo.svg", "placeholder.svg"]
+# slideinit でそろえる既定の画像 (表紙の背景とロゴ)
+ASSET_FILES = ["background.png", "logo.png"]
+# 画像のレイアウトの仮の画像。スライドが使っているときだけ (書き出しのときに) コピーする
+PLACEHOLDER = "placeholder.svg"
 ZIP_PATH = SKILL_DIR / "marp.zip"  # tools/build_marp_zip.py で作る
 CACHE_DIR = SKILL_DIR / ".bin"  # zip から取り出した実行ファイルの置き場 (git 管理外)
 MARP_PACKAGE = "@marp-team/marp-cli"
@@ -53,11 +57,11 @@ VSCODE_THEMES_KEY = "markdown.marp.themes"
 EDITABLE_MODULE = SKILL_DIR / "editable_pptx.py"
 
 
-def copy_default_assets(folder: Path) -> list[Path]:
+def copy_default_assets(folder: Path, names: list[str] | None = None) -> list[Path]:
     """スライドのフォルダの assets/ に、無い既定画像だけをコピーする"""
     dest_dir = folder / "assets"
     copied = []
-    for name in ASSET_FILES:
+    for name in ASSET_FILES if names is None else names:
         dest = dest_dir / name
         if dest.exists():
             continue
@@ -155,13 +159,19 @@ def setup_vscode_preview(folder: Path, cwd: Path) -> list[str]:
     return messages
 
 
-def prepare_folder(folder: Path, cwd: Path) -> list[str]:
+def prepare_folder(folder: Path, cwd: Path, markdown: str = "") -> list[str]:
     """スライドのフォルダに一式 (既定の画像・テーマ・VS Code の設定) をそろえる
 
-    何度実行しても同じ (既にある画像は上書きしない)。行ったことの説明を返す。
+    何度実行しても同じ (既にある画像は上書きしない)。markdown (スライドの中身) が
+    仮の画像 (assets/placeholder.svg) を使っていれば、それもコピーする。
+    行ったことの説明を返す。
     """
     folder.mkdir(parents=True, exist_ok=True)
-    messages = [f"既定の画像をコピーしました: {p}" for p in copy_default_assets(folder)]
+    names = list(ASSET_FILES)
+    if f"assets/{PLACEHOLDER}" in markdown:
+        names.append(PLACEHOLDER)
+    copied = copy_default_assets(folder, names)
+    messages = [f"既定の画像をコピーしました: {p}" for p in copied]
     return messages + setup_vscode_preview(folder, cwd)
 
 
@@ -301,7 +311,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    for message in prepare_folder(slides.parent, Path.cwd().resolve()):
+    markdown = slides.read_text(encoding="utf-8", errors="replace")
+    for message in prepare_folder(slides.parent, Path.cwd().resolve(), markdown):
         print(message)
 
     if args.format == "pptx":

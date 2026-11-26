@@ -370,17 +370,26 @@ def test_slides_have_editable_text_tables_and_lists(example_pptx: Path):
     assert all("<a:normAutofit" not in x for x in xml.values())
 
 
-def test_svg_images_are_embedded_with_fallback(example_pptx: Path):
+def test_images_are_embedded(example_pptx: Path):
+    """PNG (背景・ロゴ) はそのまま、SVG (仮の画像) は代わりの PNG を付けて入れる"""
     with zipfile.ZipFile(example_pptx) as zf:
         names = zf.namelist()
-        slide = zf.read("ppt/slides/slide1.xml").decode("utf-8")
-        rels = zf.read("ppt/slides/_rels/slide1.xml.rels").decode("utf-8")
-        background = zf.read("ppt/media/image1.svg")
-    assert background == (SKILL / "assets" / "background.svg").read_bytes()
-    assert "svgBlip" in slide and "../media/image1.svg" in rels
+        cover = zf.read("ppt/slides/slide1.xml").decode("utf-8")
+        cover_rels = zf.read("ppt/slides/_rels/slide1.xml.rels").decode("utf-8")
+        background = zf.read("ppt/media/image1.png")
+        side = zf.read("ppt/slides/slide6.xml").decode("utf-8")
+    assert background == (SKILL / "assets" / "background.png").read_bytes()
+    assert "../media/image1.png" in cover_rels and "svgBlip" not in cover
+    assert "svgBlip" in side
     assert "ppt/media/fallback.png" in names
     # 同じ画像は 1 回だけ入れる (ロゴは全ページで同じもの)
-    assert len([n for n in names if n.startswith("ppt/media/")]) == 4
+    media = sorted(n for n in names if n.startswith("ppt/media/"))
+    assert media == [
+        "ppt/media/fallback.png",
+        "ppt/media/image1.png",
+        "ppt/media/image2.png",
+        "ppt/media/image3.svg",
+    ]
 
 
 def test_png_fallback_is_a_valid_png():
