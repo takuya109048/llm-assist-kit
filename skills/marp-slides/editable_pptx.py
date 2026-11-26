@@ -1,0 +1,2034 @@
+"""Marp のスライド (kit-slides テーマ) を、PowerPoint で編集できる PPTX にする
+
+使い方:
+    python editable_pptx.py slides.md               # slides.pptx を作る
+    python editable_pptx.py slides.md -o out.pptx
+
+ふつうは build.py の --pptx-editable から使う。標準ライブラリだけで動き、Marp CLI・
+ブラウザ・LibreOffice は使わない。
+
+- 対象は SKILL.md の書き方に沿った Markdown (表紙、ヘッダー/フッター、本文のレイアウト
+  cols / image-right / image-left / table / image / center、見出し・段落・箇条書き・
+  番号付きリスト・表・画像・太字・斜体・コード・リンク)
+- 文字は PowerPoint の段落と箇条書き、表は PowerPoint の表、画像・線・ロゴは個別の
+  図形になるので、そのまま PowerPoint で編集できる
+- 位置と大きさは theme.css (と Marp の default テーマ) の寸法を、そのまま
+  1px = 1/96 インチで写す。行の高さは「固定値」で指定し、箱の内側の余白は 0 にする。
+  折り返しの位置だけは文字の幅を見積もって計算するので、ブラウザと 1 文字程度ずれることがある
+- 画像は SVG をそのまま埋め込む (PowerPoint 2016 以降で表示できる)。PNG / JPEG / GIF も使える
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import struct
+import sys
+import unicodedata
+import zipfile
+import zlib
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from html import unescape
+from pathlib import Path
+from xml.etree import ElementTree
+
+# ---- テーマの寸法 (theme.css と Marp の default テーマ。単位は px、スライドは 1280x720) ----
+
+SLIDE_W = 1280
+SLIDE_H = 720
+EMU_PER_PX = 9525  # 1px = 1/96 インチ = 9525 EMU
+HEADER_H = 84  # --kit-header-h
+FOOTER_H = 56  # --kit-footer-h
+SIDE = 56  # --kit-side
+BODY_TOP = HEADER_H + 28
+BODY_BOTTOM = SLIDE_H - (FOOTER_H + 20)
+BODY_LEFT = SIDE
+BODY_W = SLIDE_W - 2 * SIDE
+COLS_GAP = 64  # section.cols の column-gap
+IMAGE_W = SLIDE_W * 0.46  # section.image-right / image-left の --kit-image-w
+IMAGE_GAP = 32  # 画像とテキストの間
+COVER_SIDE = 96  # section.cover の左右の余白
+COVER_TITLE_H = SLIDE_H / 2  # 表紙のタイトル (h1) の高さ (下端が中央の線)
+COVER_TITLE_PAD = 28
+COVER_LINE = 3
+LOGO_H = 34  # footer img の高さ
+
+ACCENT = "1F4E8C"  # --kit-accent / --kit-line
+TEXT = "222222"  # --kit-text
+MUTED = "666666"  # --kit-muted
+WHITE = "FFFFFF"
+H1_COLOR = "224466"  # Marp の default テーマの h1
+H6_COLOR = "59636E"
+QUOTE_COLOR = "59636E"
+BORDER = "D1D9E0"  # 表の罫線、引用の線、コードの枠
+ZEBRA = "F6F8FA"  # 表の偶数行、コードの背景
+CODE_TEXT = "1F2328"
+INLINE_CODE_BG = "EEEFF1"  # rgba(129, 139, 152, 0.12) を白の上に重ねた色
+
+LATIN_FONT = "Segoe UI"  # 半角英数 (theme.css の --kit-font)
+EA_FONT = "Meiryo"  # 全角 (日本語)
+MONO_FONT = "Consolas"
+BULLET_FONT = "Arial"
+
+ACCEPTED_IMAGES = {
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+}
+
+# ---- Markdown の中身 ----
+
+
+@dataclass
+class Run:
+    """同じ書式の文字のまとまり。text が "\\n" のものは改行"""
+
+    text: str
+    bold: bool = False
+    italic: bool = False
+    code: bool = False
+    strike: bool = False
+    link: str | None = None
+
+
+@dataclass
+class Heading:
+    level: int
+    runs: list[Run]
+
+
+@dataclass
+class Paragraph:
+    runs: list[Run]
+
+
+@dataclass
+class Image:
+    src: str
+    alt: str = ""
+
+
+@dataclass
+class ListItem:
+    runs: list[Run]
+    children: list[ListBlock] = field(default_factory=list)
+
+
+@dataclass
+class ListBlock:
+    ordered: bool
+    start: int = 1
+    items: list[ListItem] = field(default_factory=list)
+
+
+@dataclass
+class Table:
+    header: list[list[Run]]
+    rows: list[list[list[Run]]]
+    aligns: list[str | None]
+
+
+@dataclass
+class Quote:
+    runs: list[Run]
+
+
+@dataclass
+class Code:
+    text: str
+
+
+Block = Heading | Paragraph | Image | ListBlock | Table | Quote | Code
+
+
+@dataclass
+class Slide:
+    blocks: list[Block]
+    cls: str = ""
+    paginate: bool = False
+    footer: str = ""
+    backgrounds: list[Image] = field(default_factory=list)
+
+
+# ---- Markdown を読む ----
+
+FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
+LIST_RE = re.compile(r"^(\s*)([-*+]|\d{1,9}[.)])(\s+|$)(.*)$")
+QUOTE_RE = re.compile(r"^\s{0,3}>\s?(.*)$")
+TABLE_SEP_RE = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")
+COMMENT_RE = re.compile(r"<!--(.*?)-->", re.S)
+DIRECTIVE_RE = re.compile(r"^\s*(_?)([A-Za-z]+)\s*:\s*(.*?)\s*$")
+IMAGE_ONLY_RE = re.compile(
+    r"^\s*!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)\s*$"
+)
+BG_IMAGE_RE = re.compile(
+    r"!\[(bg(?:\s[^\]]*)?)\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)"
+)
+LOCAL_DIRECTIVES = {"class", "paginate", "footer", "header"}
+
+
+def split_front_matter(text: str) -> tuple[dict[str, str], str]:
+    """先頭の YAML (--- で囲んだ部分) を、キーと値の辞書と残りの本文に分ける"""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}, text
+    for end in range(1, len(lines)):
+        if lines[end].strip() in ("---", "..."):
+            meta = {}
+            for line in lines[1:end]:
+                m = DIRECTIVE_RE.match(line)
+                if m and not m.group(1):
+                    meta[m.group(2)] = unquote(m.group(3))
+            return meta, "\n".join(lines[end + 1 :])
+    return {}, text
+
+
+def unquote(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        return value[1:-1]
+    return value
+
+
+def split_slides(body: str) -> list[str]:
+    """--- だけの行でスライドに分ける (コードブロックの中は除く)"""
+    slides: list[list[str]] = [[]]
+    fence = ""
+    for line in body.splitlines():
+        m = FENCE_RE.match(line)
+        if m:
+            if not fence:
+                fence = m.group(1)[0] * 3
+            elif line.strip().startswith(fence):
+                fence = ""
+        if not fence and line.strip() == "---":
+            slides.append([])
+        else:
+            slides[-1].append(line)
+    texts = ["\n".join(lines) for lines in slides]
+    # 本文の先頭が --- のとき (フロントマターの直後) にできる空のスライドは除く
+    if len(texts) > 1 and not texts[0].strip():
+        texts = texts[1:]
+    return texts
+
+
+def parse_directives(comment: str) -> dict[str, tuple[str, bool]] | None:
+    """HTML コメントがディレクティブなら {名前: (値, そのスライドだけか)}、違えば None"""
+    found: dict[str, tuple[str, bool]] = {}
+    for line in comment.strip().splitlines():
+        if not line.strip():
+            continue
+        m = DIRECTIVE_RE.match(line)
+        if not m:
+            return None
+        found[m.group(2)] = (unquote(m.group(3)), bool(m.group(1)))
+    return found or None
+
+
+def to_bool(value: str) -> bool:
+    return value.strip().lower() in ("true", "yes", "on", "1")
+
+
+def parse_markdown(text: str) -> list[Slide]:
+    """Marp の Markdown をスライドの一覧にする"""
+    meta, body = split_front_matter(text.replace("\r\n", "\n"))
+    state = {key: meta[key] for key in LOCAL_DIRECTIVES if key in meta}
+    slides = []
+    for chunk in split_slides(body):
+        local: dict[str, str] = {}
+        for m in COMMENT_RE.finditer(chunk):
+            for key, (value, only_here) in (parse_directives(m.group(1)) or {}).items():
+                if key not in LOCAL_DIRECTIVES:
+                    continue
+                if only_here:
+                    local[key] = value
+                else:
+                    state[key] = value
+        chunk = COMMENT_RE.sub("", chunk)
+        settings = {**state, **local}
+        backgrounds: list[Image] = []
+
+        def take_bg(m: re.Match[str]) -> str:
+            backgrounds.append(Image(m.group(2), m.group(1)))
+            return ""
+
+        chunk = BG_IMAGE_RE.sub(take_bg, chunk)
+        slides.append(
+            Slide(
+                blocks=parse_blocks(chunk.split("\n")),
+                cls=settings.get("class", "").strip(),
+                paginate=to_bool(settings.get("paginate", "false")),
+                footer=settings.get("footer", ""),
+                backgrounds=backgrounds,
+            )
+        )
+    return slides
+
+
+def is_block_start(line: str) -> bool:
+    return bool(
+        HEADING_RE.match(line)
+        or FENCE_RE.match(line)
+        or QUOTE_RE.match(line)
+        or LIST_RE.match(line)
+    )
+
+
+def parse_blocks(lines: list[str]) -> list[Block]:
+    blocks: list[Block] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not line.strip():
+            i += 1
+            continue
+        if m := FENCE_RE.match(line):
+            fence = m.group(1)
+            code = []
+            i += 1
+            while i < len(lines) and not lines[i].strip().startswith(fence):
+                code.append(lines[i])
+                i += 1
+            blocks.append(Code("\n".join(code)))
+            i += 1
+            continue
+        if m := HEADING_RE.match(line):
+            blocks.append(Heading(len(m.group(1)), parse_inline(m.group(2))))
+            i += 1
+            continue
+        if "|" in line and i + 1 < len(lines) and TABLE_SEP_RE.match(lines[i + 1]):
+            i = parse_table(lines, i, blocks)
+            continue
+        if QUOTE_RE.match(line):
+            quoted = []
+            while i < len(lines) and lines[i].strip():
+                m = QUOTE_RE.match(lines[i])
+                quoted.append(m.group(1) if m else lines[i])
+                i += 1
+            blocks.append(Quote(parse_inline("\n".join(q for q in quoted))))
+            continue
+        if LIST_RE.match(line):
+            i = parse_list(lines, i, blocks)
+            continue
+        para = [line.strip()]
+        i += 1
+        while i < len(lines) and lines[i].strip() and not is_block_start(lines[i]):
+            para.append(lines[i].strip())
+            i += 1
+        text = "\n".join(para)
+        if m := IMAGE_ONLY_RE.match(text):
+            blocks.append(Image(m.group(2), m.group(1)))
+        elif text.strip():
+            blocks.append(Paragraph(parse_inline(text)))
+    return blocks
+
+
+def split_row(line: str) -> list[str]:
+    line = line.strip()
+    if line.startswith("|"):
+        line = line[1:]
+    if line.endswith("|") and not line.endswith("\\|"):
+        line = line[:-1]
+    cells = re.split(r"(?<!\\)\|", line)
+    return [c.strip().replace("\\|", "|") for c in cells]
+
+
+def parse_table(lines: list[str], i: int, blocks: list[Block]) -> int:
+    header = split_row(lines[i])
+    aligns: list[str | None] = []
+    for cell in split_row(lines[i + 1]):
+        left, right = cell.startswith(":"), cell.endswith(":")
+        aligns.append(
+            "ctr" if left and right else "r" if right else "l" if left else None
+        )
+    i += 2
+    rows = []
+    while i < len(lines) and lines[i].strip() and "|" in lines[i]:
+        rows.append(split_row(lines[i]))
+        i += 1
+    n = len(header)
+    aligns = (aligns + [None] * n)[:n]
+    blocks.append(
+        Table(
+            [parse_inline(c) for c in header],
+            [[parse_inline(c) for c in (row + [""] * n)[:n]] for row in rows],
+            aligns,
+        )
+    )
+    return i
+
+
+def parse_list(lines: list[str], i: int, blocks: list[Block]) -> int:
+    """箇条書き・番号付きリスト (入れ子あり) を読む"""
+    # stack: (リスト, 記号の桁, 中身の桁)
+    stack: list[tuple[ListBlock, int, int]] = []
+    root: ListBlock | None = None
+    texts: dict[int, list[str]] = {}  # id(item) -> 行
+    items: list[ListItem] = []
+    while i < len(lines):
+        line = lines[i]
+        if not line.strip():
+            # 空行の次も (字下げした) リストの続きなら続ける
+            j = i + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            if j < len(lines) and (
+                LIST_RE.match(lines[j]) or lines[j].startswith((" " * 2, "\t"))
+            ):
+                if LIST_RE.match(lines[j]) and not lines[j][0].isspace():
+                    m = LIST_RE.match(lines[j])
+                    assert m
+                    if root and (m.group(2)[0].isdigit()) != root.ordered:
+                        break
+                i = j
+                continue
+            break
+        m = LIST_RE.match(line)
+        if m:
+            indent = len(m.group(1).expandtabs(4))
+            marker = m.group(2)
+            ordered = marker[0].isdigit()
+            content_col = indent + len(marker) + max(1, len(m.group(3)))
+            while stack and indent < stack[-1][1]:
+                stack.pop()
+            if stack and indent >= stack[-1][2] and stack[-1][0].items:
+                parent = stack[-1][0].items[-1]
+                child = ListBlock(ordered, int(marker[:-1]) if ordered else 1)
+                parent.children.append(child)
+                stack.append((child, indent, content_col))
+            elif not stack:
+                if root is not None:
+                    break
+                root = ListBlock(ordered, int(marker[:-1]) if ordered else 1)
+                stack.append((root, indent, content_col))
+            elif stack[-1][0].ordered != ordered and len(stack) == 1:
+                break  # 種類の違うリストは別のリスト
+            item = ListItem([])
+            stack[-1][0].items.append(item)
+            items.append(item)
+            texts[id(item)] = [m.group(4).strip()]
+        else:
+            if not items or is_block_start(line) and not line[0].isspace():
+                break
+            texts[id(items[-1])].append(line.strip())
+        i += 1
+    for item in items:
+        item.runs = parse_inline("\n".join(t for t in texts[id(item)] if t))
+    if root:
+        blocks.append(root)
+    return i
+
+
+INLINE_RE = re.compile(
+    r"(?P<esc>\\(?P<escch>[!-/:-@\[-`{-~]))"
+    r"|(?P<code>(?P<ticks>`+)(?P<codetext>.+?)(?P=ticks))"
+    r"|(?P<img>!\[(?P<imgalt>[^\]]*)\]\([^)]*\))"
+    r"|(?P<link>\[(?P<linktext>[^\]]+)\]\(\s*<?(?P<href>[^)\s>]*)>?(?:\s+\"[^\"]*\")?\s*\))"
+    r"|(?P<autolink><(?P<auto>https?://[^>\s]+)>)"
+    r"|(?P<bold>\*\*(?P<boldtext>.+?)\*\*|__(?P<boldtext2>.+?)__)"
+    r"|(?P<strike>~~(?P<striketext>.+?)~~)"
+    r"|(?P<em>\*(?P<emtext>[^*\s](?:.*?[^*\s])?)\*"
+    r"|(?<![0-9A-Za-z])_(?P<emtext2>[^_\s](?:.*?[^_\s])?)_(?![0-9A-Za-z]))"
+    r"|(?P<br><br\s*/?>)"
+    r"|(?P<nl>[ \t]*\n[ \t]*)",
+    re.S,
+)
+
+
+def parse_inline(text: str, base: Run | None = None) -> list[Run]:
+    """行の中の書式 (太字・斜体・コード・リンク・改行) を Run の並びにする"""
+    base = base or Run("")
+    runs: list[Run] = []
+
+    def add(s: str, code: bool = False, link: str | None = None) -> None:
+        if s:
+            runs.append(
+                Run(
+                    s,
+                    base.bold,
+                    base.italic,
+                    base.code or code,
+                    base.strike,
+                    link or base.link,
+                )
+            )
+
+    def nested(s: str, **changes: bool | str) -> None:
+        sub = Run(
+            "",
+            bool(changes.get("bold", base.bold)),
+            bool(changes.get("italic", base.italic)),
+            base.code,
+            bool(changes.get("strike", base.strike)),
+            str(changes["link"]) if "link" in changes else base.link,
+        )
+        runs.extend(parse_inline(s, sub))
+
+    pos = 0
+    for m in INLINE_RE.finditer(text):
+        add(unescape(text[pos : m.start()]))
+        pos = m.end()
+        g = m.groupdict()
+        if g["esc"]:
+            add(g["escch"])
+        elif g["code"]:
+            add(g["codetext"].strip() or g["codetext"], code=True)
+        elif g["img"]:
+            add(g["imgalt"])
+        elif g["link"]:
+            nested(g["linktext"], link=g["href"])
+        elif g["autolink"]:
+            add(g["auto"], link=g["auto"])
+        elif g["bold"]:
+            nested(g["boldtext"] or g["boldtext2"] or "", bold=True)
+        elif g["strike"]:
+            nested(g["striketext"], strike=True)
+        elif g["em"]:
+            nested(g["emtext"] or g["emtext2"] or "", italic=True)
+        elif g["br"] or g["nl"]:
+            runs.append(Run("\n"))
+    add(unescape(text[pos:]))
+    return runs
+
+
+def plain_text(runs: list[Run]) -> str:
+    return "".join(r.text for r in runs)
+
+
+# ---- 文字の幅の見積もり (折り返しと表の列幅に使う) ----
+
+# Segoe UI の半角文字の幅 (1em に対する割合)
+LATIN_WIDTHS: dict[str, float] = {" ": 0.274}
+for _chars, _width in [
+    ("0123456789", 0.559),
+    ("il|!.,:;'", 0.245),
+    ("jI", 0.27),
+    ("frt()[]{}", 0.34),
+    ('`"', 0.38),
+    ("szJ-/\\*", 0.42),
+    ("ckvxyLT?_", 0.48),
+    ("abdeghnopquFEZ", 0.54),
+    ("SPKRXYBC^~", 0.58),
+    ("VAG$#+<>=", 0.64),
+    ("DHNOQU", 0.74),
+    ("w&%", 0.76),
+    ("mM", 0.86),
+    ("W@", 0.95),
+]:
+    for _ch in _chars:
+        LATIN_WIDTHS[_ch] = _width
+
+# 行頭に来ない文字 (前の文字とつなげる) と、行末に来ない文字 (次の文字とつなげる)
+NO_LINE_START = set(
+    "、。，．・：；？！ー）」』】〕〉》｝］’”ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ々〜…‥,.:;!?)]}%"
+)
+NO_LINE_END = set("（「『【〔〈《｛［‘“([{")
+
+
+# 文字の幅は見積もりなので、幅を文字に合わせるとき (表の列・center の箇条書き) は少し広げる。
+# 狭すぎると PowerPoint で 1 文字だけ次の行に送られてしまうため
+WIDTH_SLACK = 1.06
+
+
+def char_em(ch: str) -> float:
+    if ch in LATIN_WIDTHS:
+        return LATIN_WIDTHS[ch]
+    if ch.isascii():
+        return 0.5
+    kind = unicodedata.east_asian_width(ch)
+    if kind in ("W", "F"):
+        return 1.0
+    if kind == "H":
+        return 0.5
+    return 0.6
+
+
+def is_wide(ch: str) -> bool:
+    return unicodedata.east_asian_width(ch) in ("W", "F")
+
+
+def run_char_width(ch: str, run: Run, size: float) -> float:
+    if run.code:
+        return 0.55 * size * 0.85
+    width = char_em(ch) * size
+    if run.bold and not is_wide(ch):
+        width *= 1.06
+    return width
+
+
+def text_units(runs: list[Run], size: float) -> list[tuple[str, float]]:
+    """折り返しの単位 ("br" / "space" / "word", 幅) の並びにする
+
+    日本語は 1 文字ずつ (行頭・行末の禁則はつなげる)、英数字は単語ごと。
+    """
+    units: list[list] = []  # [kind, width, 最後の文字]
+    for run in runs:
+        if run.text == "\n":
+            units.append(["br", 0.0, ""])
+            continue
+        if run.code:
+            units.append(["word", 0.4 * size * 0.85 * 2, ""])  # 左右の余白
+        for ch in run.text:
+            w = run_char_width(ch, run, size)
+            last = units[-1] if units else None
+            if ch == " " or ch == "\t":
+                units.append(["space", w, " "])
+            elif ch in NO_LINE_START and last and last[0] == "word":
+                last[1] += w
+                last[2] = ch
+            elif last and last[0] == "word" and last[2] in NO_LINE_END:
+                last[1] += w
+                last[2] = ch
+            elif is_wide(ch):
+                units.append(["word", w, ch])
+            elif last and last[0] == "word" and last[2] and not is_wide(last[2]):
+                last[1] += w
+                last[2] = ch
+            else:
+                units.append(["word", w, ch])
+    return [(u[0], u[1]) for u in units]
+
+
+def count_lines(runs: list[Run], size: float, width: float) -> int:
+    """幅 width に収めたときの行数"""
+    lines, x = 1, 0.0
+    pending_space = 0.0
+    for kind, w in text_units(runs, size):
+        if kind == "br":
+            lines, x, pending_space = lines + 1, 0.0, 0.0
+        elif kind == "space":
+            pending_space += w
+        else:
+            if x > 0 and x + pending_space + w > width + 0.5:
+                lines += 1
+                x = 0.0
+            else:
+                x += pending_space
+            pending_space = 0.0
+            while w > width and x == 0 and width > 0:
+                lines += 1
+                w -= width
+            x += w
+    return lines
+
+
+def max_content_width(runs: list[Run], size: float) -> float:
+    widths, x = [0.0], 0.0
+    for kind, w in text_units(runs, size):
+        if kind == "br":
+            widths.append(x)
+            x = 0.0
+        else:
+            x += w
+    widths.append(x)
+    return max(widths)
+
+
+def min_content_width(runs: list[Run], size: float) -> float:
+    return max((w for kind, w in text_units(runs, size) if kind == "word"), default=0.0)
+
+
+# ---- PowerPoint の図形 (位置と大きさは px) ----
+
+
+@dataclass
+class Para:
+    runs: list[Run]
+    size: float  # 文字の大きさ (px)
+    line: float  # 行の高さ (px)
+    color: str = TEXT
+    bold: bool = False
+    italic: bool = False
+    align: str = "l"
+    space_before: float = 0.0
+    space_after: float = 0.0
+    mar_l: float = 0.0
+    indent: float = 0.0
+    bullet: str | None = None  # 記号 ("•" など)
+    bullet_font: str = BULLET_FONT
+    autonum: str | None = None  # 番号の種類 ("arabicPeriod" など)
+    start: int = 1
+    field_slidenum: bool = False  # 先頭の run をスライド番号にする
+    level: int = 0  # 箇条書きの深さ (番号を入れ子の後ろでも続けるのに使う)
+
+
+@dataclass
+class TextBox:
+    x: float
+    y: float
+    w: float
+    h: float
+    paras: list[Para]
+    anchor: str = "t"
+    inset_t: float = 0.0
+    inset_b: float = 0.0
+    inset_l: float = 0.0
+    inset_r: float = 0.0
+    fill: str | None = None
+    border: str | None = None
+    name: str = "テキスト"
+
+
+@dataclass
+class Picture:
+    x: float
+    y: float
+    w: float
+    h: float
+    path: Path
+    alt: str = ""
+    crop: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # 左上右下 (割合)
+    name: str = "図"
+
+
+@dataclass
+class Rect:
+    x: float
+    y: float
+    w: float
+    h: float
+    color: str
+    name: str = "線"
+
+
+@dataclass
+class Cell:
+    paras: list[Para]
+    fill: str | None
+    pad_x: float
+    pad_y: float
+
+
+@dataclass
+class TableShape:
+    x: float
+    y: float
+    col_widths: list[float]
+    row_heights: list[float]
+    rows: list[list[Cell]]
+    name: str = "表"
+
+
+Shape = TextBox | Picture | Rect | TableShape
+
+
+@dataclass
+class PageShapes:
+    background: str
+    shapes: list[Shape]
+
+
+# ---- 文字のスタイル ----
+
+
+@dataclass
+class Context:
+    """本文の文字の基準 (ふつうは 26px / 行の高さ 1.5、center は 34px / 1.6)"""
+
+    size: float = 26.0
+    line: float = 1.5
+    color: str = TEXT
+    center: bool = False  # 中央ぞろえ (center / table / image クラス)
+    flex: bool = False  # 余白を重ねない (display: flex の中)
+    layout: str = ""  # center / table / image など
+
+
+NORMAL = Context()
+
+
+def heading_style(level: int, ctx: Context) -> tuple[float, str, float, float]:
+    """見出しの (文字の大きさ, 色, 上の余白, 下の余白)"""
+    if level == 3 or level == 2:
+        if ctx.layout == "center":
+            return 44.0, ACCENT, 0.0, 22.0
+        if ctx.layout in ("table", "image"):
+            return 30.0, ACCENT, 0.0, 12.0
+        return 30.0, ACCENT, 24.0, 9.0
+    size = {1: 1.6, 4: 1.05, 5: 1.0, 6: 0.9}[level] * ctx.size
+    color = {1: H1_COLOR, 6: H6_COLOR}.get(level, ctx.color)
+    return size, color, 24.0, 16.0
+
+
+def block_margins(block: Block, ctx: Context) -> tuple[float, float]:
+    if isinstance(block, Heading):
+        _, _, top, bottom = heading_style(block.level, ctx)
+        return top, bottom
+    if isinstance(block, ListBlock):
+        return 0.2 * ctx.size, 0.2 * ctx.size
+    if isinstance(block, Paragraph):
+        if ctx.layout == "center":
+            return 0.3 * ctx.size, 0.3 * ctx.size
+        if ctx.layout == "image":
+            return 0.5 * 22, 0.0  # 画像の下の説明
+        return 0.0, 16.0
+    return 0.0, 16.0  # 表・引用・コード・画像
+
+
+def para_style(block: Block, ctx: Context) -> tuple[float, float, str]:
+    """段落の (文字の大きさ, 行の高さ, 色)"""
+    if isinstance(block, Paragraph) and ctx.layout == "image":
+        return 22.0, 33.0, MUTED
+    return ctx.size, ctx.size * ctx.line, ctx.color
+
+
+BULLETS = [("•", BULLET_FONT), ("o", "Courier New"), ("§", "Wingdings")]
+NUMBERS = ["arabicPeriod", "romanLcPeriod", "alphaLcPeriod"]
+
+
+def list_paras(
+    lst: ListBlock,
+    ctx: Context,
+    width: float,
+    left: float = 0.0,
+    depth: int = 0,
+    ol_depth: int = 0,
+    first: bool = True,
+) -> tuple[list[Para], float]:
+    """リストを段落にする。(段落, 高さ) を返す
+
+    left はリストの左端 (テキストボックスの左端から)。記号は CSS の outside の位置に
+    合わせて、本文の左端 (left + 2em) から少し左に置く。
+    """
+    size, line = ctx.size, ctx.size * ctx.line
+    indent_w = 2 * size
+    paras: list[Para] = []
+    height = 0.0
+    for n, item in enumerate(lst.items):
+        gap = 0.0 if (n == 0) else 0.25 * size
+        mar_l = left + indent_w
+        avail = max(width - mar_l, size)
+        para = Para(
+            item.runs,
+            size,
+            line,
+            ctx.color,
+            align="l",
+            space_before=gap,
+            mar_l=mar_l,
+            level=min(depth, 8),
+        )
+        if lst.ordered:
+            para.autonum = NUMBERS[min(ol_depth, len(NUMBERS) - 1)]
+            para.start = lst.start
+            para.indent = -1.08 * size
+        else:
+            para.bullet, para.bullet_font = BULLETS[min(depth, len(BULLETS) - 1)]
+            para.indent = -0.9 * size
+        paras.append(para)
+        height += gap + count_lines(item.runs, size, avail) * line
+        for child in item.children:
+            sub, h = list_paras(
+                child,
+                ctx,
+                width,
+                mar_l,
+                depth + 1,
+                ol_depth + (1 if child.ordered else 0),
+            )
+            paras.extend(sub)
+            height += h
+    return paras, height
+
+
+def list_width(lst: ListBlock, ctx: Context, left: float = 0.0) -> float:
+    """リストの最大の幅 (center で真ん中に置くのに使う)"""
+    width = 0.0
+    for item in lst.items:
+        text_w = max_content_width(item.runs, ctx.size) * WIDTH_SLACK
+        width = max(width, left + 2 * ctx.size + text_w)
+        for child in item.children:
+            width = max(width, list_width(child, ctx, left + 2 * ctx.size))
+    return width
+
+
+def text_paras(block: Block, ctx: Context, width: float) -> tuple[list[Para], float]:
+    """文字のブロック (見出し・段落・リスト) を段落にする。(段落, 高さ) を返す"""
+    align = "ctr" if ctx.center else "l"
+    if isinstance(block, Heading):
+        size, color, _, _ = heading_style(block.level, ctx)
+        line = size * 1.25
+        # h1 は下に余白 (padding-bottom: 0.3em) があるので、段落の後の間隔にする
+        after = 0.3 * size if block.level == 1 else 0.0
+        para = Para(
+            block.runs, size, line, color, bold=True, align=align, space_after=after
+        )
+        return [para], count_lines(block.runs, size, width) * line + after
+    if isinstance(block, ListBlock):
+        left = 0.0
+        if ctx.center:
+            lw = min(list_width(block, ctx), width)
+            left = max((width - lw) / 2, 0.0)
+        return list_paras(block, ctx, width, left, ol_depth=0)
+    if isinstance(block, (Paragraph, Quote)):
+        size, line, color = para_style(block, ctx)
+        para = Para(block.runs, size, line, color, align=align)
+        return [para], count_lines(block.runs, size, width) * line
+    raise TypeError(block)
+
+
+def is_text(block: Block) -> bool:
+    return isinstance(block, (Heading, Paragraph, ListBlock))
+
+
+# ---- 画像 ----
+
+
+def image_size(path: Path) -> tuple[float, float]:
+    """画像の大きさ (px)。分からなければ 4:3"""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return 800.0, 600.0
+    return image_size_from_bytes(data, path.suffix.lower())
+
+
+def image_size_from_bytes(data: bytes, suffix: str) -> tuple[float, float]:
+    try:
+        if suffix == ".svg":
+            return svg_size(data)
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            w, h = struct.unpack(">II", data[16:24])
+            return float(w), float(h)
+        if data[:6] in (b"GIF87a", b"GIF89a"):
+            w, h = struct.unpack("<HH", data[6:10])
+            return float(w), float(h)
+        if data[:2] == b"\xff\xd8":
+            return jpeg_size(data)
+    except (struct.error, ValueError, ElementTree.ParseError):
+        pass
+    return 800.0, 600.0
+
+
+def css_length(value: str | None) -> float | None:
+    if not value:
+        return None
+    m = re.match(r"^\s*([0-9.]+)\s*(px|pt|in|cm|mm)?\s*$", value)
+    if not m:
+        return None
+    scale = {"pt": 96 / 72, "in": 96, "cm": 96 / 2.54, "mm": 96 / 25.4}.get(
+        m.group(2) or "px", 1.0
+    )
+    return float(m.group(1)) * scale
+
+
+def svg_size(data: bytes) -> tuple[float, float]:
+    root = ElementTree.fromstring(data)
+    w = css_length(root.get("width"))
+    h = css_length(root.get("height"))
+    box = root.get("viewBox")
+    if box:
+        parts = [float(v) for v in re.split(r"[\s,]+", box.strip())]
+        if len(parts) == 4 and parts[2] > 0 and parts[3] > 0:
+            if w and not h:
+                h = w * parts[3] / parts[2]
+            elif h and not w:
+                w = h * parts[2] / parts[3]
+            elif not w and not h:
+                w, h = parts[2], parts[3]
+    return (w or 300.0), (h or 150.0)
+
+
+def jpeg_size(data: bytes) -> tuple[float, float]:
+    i = 2
+    while i + 9 < len(data):
+        if data[i] != 0xFF:
+            i += 1
+            continue
+        marker = data[i + 1]
+        length = struct.unpack(">H", data[i + 2 : i + 4])[0]
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            h, w = struct.unpack(">HH", data[i + 5 : i + 9])
+            return float(w), float(h)
+        i += 2 + length
+    raise ValueError("JPEG の大きさが分かりません")
+
+
+def contain(
+    x: float, y: float, w: float, h: float, iw: float, ih: float, upscale: bool = False
+) -> tuple[float, float, float, float]:
+    """(x, y, w, h) の中に縦横比を保って収め、真ん中に置いた位置 (object-fit: contain)"""
+    scale = min(w / iw, h / ih)
+    if not upscale:
+        scale = min(scale, 1.0)
+    nw, nh = iw * scale, ih * scale
+    return x + (w - nw) / 2, y + (h - nh) / 2, nw, nh
+
+
+def cover_crop(
+    iw: float, ih: float, w: float, h: float
+) -> tuple[float, float, float, float]:
+    """(w, h) をすき間なく埋めるように切り取る割合 (background-size: cover)"""
+    if iw / ih > w / h:
+        cut = (1 - (w / h) / (iw / ih)) / 2
+        return cut, 0.0, cut, 0.0
+    cut = (1 - (iw / ih) / (w / h)) / 2
+    return 0.0, cut, 0.0, cut
+
+
+# ---- レイアウト ----
+
+
+class Layout:
+    """1 枚のスライドを図形に並べる"""
+
+    def __init__(self, base_dir: Path, warn: list[str]) -> None:
+        self.base_dir = base_dir
+        self.warn = warn
+
+    def resolve(self, src: str) -> Path | None:
+        if re.match(r"^[a-z][a-z0-9+.-]*://", src, re.I):
+            self.warn.append(f"Web 上の画像は使えません (省きました): {src}")
+            return None
+        path = Path(unescape(src))
+        if not path.is_absolute():
+            path = self.base_dir / path
+        if not path.is_file():
+            self.warn.append(f"画像がありません (省きました): {src}")
+            return None
+        if path.suffix.lower() not in ACCEPTED_IMAGES:
+            self.warn.append(f"この形式の画像は使えません (省きました): {src}")
+            return None
+        return path
+
+    # -- 本文の流し込み --
+
+    def flow(
+        self,
+        blocks: list[Block],
+        x: float,
+        y: float,
+        w: float,
+        ctx: Context,
+        shapes: list[Shape],
+        first_margin: bool = True,
+    ) -> float:
+        """ブロックを上から順に並べ (余白は重ねる)、下端の y を返す"""
+        box: TextBox | None = None
+        prev_bottom: float | None = None
+        for index, block in enumerate(blocks):
+            top, bottom = block_margins(block, ctx)
+            if index == 0 and not first_margin:
+                top = 0.0
+            gap = top if prev_bottom is None else max(prev_bottom, top)
+            block_y = y + gap
+            if is_text(block):
+                paras, h = text_paras(block, ctx, w)
+                if box is None:
+                    box = TextBox(x, block_y, w, 0.0, [])
+                    shapes.append(box)
+                else:
+                    paras[0].space_before += gap
+                box.paras.extend(paras)
+                y = block_y + h
+                box.h = y - box.y
+            else:
+                box = None
+                y = block_y + self.place_block(block, x, block_y, w, ctx, shapes)
+            prev_bottom = bottom
+        return y
+
+    def place_block(
+        self,
+        block: Block,
+        x: float,
+        y: float,
+        w: float,
+        ctx: Context,
+        shapes: list[Shape],
+    ) -> float:
+        """文字以外のブロック (表・画像・引用・コード) を置き、高さを返す"""
+        if isinstance(block, Table):
+            table = self.table(block, x, y, w, ctx)
+            shapes.append(table)
+            return sum(table.row_heights) + 1
+        if isinstance(block, Image):
+            path = self.resolve(block.src)
+            if not path:
+                return 0.0
+            iw, ih = image_size(path)
+            scale = min(1.0, w / iw)
+            pw, ph = iw * scale, ih * scale
+            px = x + (w - pw) / 2 if ctx.center else x
+            shapes.append(Picture(px, y, pw, ph, path, block.alt))
+            return ph + 0.335 * ctx.size  # 画像は文字の行に乗るので、下に少しすき間
+        if isinstance(block, Quote):
+            size, line = ctx.size, ctx.size * ctx.line
+            bar, pad = 0.25 * size, size
+            h = count_lines(block.runs, size, w - bar - pad) * line
+            shapes.append(Rect(x, y, round(bar), h, BORDER, "引用の線"))
+            para = Para(block.runs, size, line, QUOTE_COLOR)
+            shapes.append(
+                TextBox(x + bar + pad, y, w - bar - pad, h, [para], name="引用")
+            )
+            return h
+        if isinstance(block, Code):
+            size = ctx.size * 0.85
+            line = size * 1.15
+            runs = []
+            for n, text in enumerate(block.text.split("\n")):
+                if n:
+                    runs.append(Run("\n"))
+                runs.append(Run(text or " ", code=True))
+            lines = block.text.count("\n") + 1
+            h = lines * line + 32 + 2
+            para = Para(runs, size, line, CODE_TEXT)
+            shapes.append(
+                TextBox(
+                    x,
+                    y,
+                    w,
+                    h,
+                    [para],
+                    inset_t=17,
+                    inset_b=17,
+                    inset_l=17,
+                    inset_r=17,
+                    fill=ZEBRA,
+                    border=BORDER,
+                    name="コード",
+                )
+            )
+            return h
+        raise TypeError(block)
+
+    # -- 表 --
+
+    def table(
+        self, tbl: Table, x: float, y: float, avail: float, ctx: Context
+    ) -> TableShape:
+        full = ctx.layout == "table"
+        size = 24.0 if full else 22.0
+        line = size * 1.5
+        pad_x, pad_y = 32.0, (12.0 if full else 8.0)
+        rows = [tbl.header, *tbl.rows]
+        ncol = len(tbl.header)
+        max_w = [0.0] * ncol
+        min_w = [0.0] * ncol
+        for r, row in enumerate(rows):
+            for c, runs in enumerate(row):
+                runs = header_runs(runs) if r == 0 else runs
+                text_w = max_content_width(runs, size) * WIDTH_SLACK
+                max_w[c] = max(max_w[c], text_w + 2 * pad_x + 1)
+                min_w[c] = max(min_w[c], min_content_width(runs, size) + 2 * pad_x + 1)
+        widths = table_widths(min_w, max_w, avail, full)
+        heights = []
+        shape_rows = []
+        for r, row in enumerate(rows):
+            lines = 1
+            cells = []
+            for c, runs in enumerate(row):
+                header = r == 0
+                align = tbl.aligns[c] or ("ctr" if header else "l")
+                para = Para(
+                    runs,
+                    size,
+                    line,
+                    WHITE if header else TEXT,
+                    bold=header,
+                    align=align,
+                )
+                measured = header_runs(runs) if header else runs
+                inner = widths[c] - 2 * pad_x - 1
+                lines = max(lines, count_lines(measured, size, inner))
+                fill = ACCENT if header else (ZEBRA if r % 2 == 0 else WHITE)
+                cells.append(Cell([para], fill, pad_x, pad_y))
+            heights.append(lines * line + 2 * pad_y + 1)
+            shape_rows.append(cells)
+        return TableShape(x + 0.5, y + 0.5, widths, heights, shape_rows)
+
+    # -- スライド --
+
+    def slide(self, slide: Slide, number: int, total: int) -> PageShapes:
+        if slide.cls.split() and "cover" in slide.cls.split():
+            return self.cover(slide)
+        shapes: list[Shape] = []
+        for bg in slide.backgrounds:
+            self.background(bg, shapes)
+        shapes.append(Rect(0, HEADER_H, SLIDE_W, 3, ACCENT, "ヘッダーの線"))
+        shapes.append(
+            Rect(0, SLIDE_H - FOOTER_H - 1, SLIDE_W, 1, ACCENT, "フッターの線")
+        )
+        blocks = list(slide.blocks)
+        title_index = next(
+            (
+                i
+                for i, b in enumerate(blocks)
+                if isinstance(b, Heading) and b.level == 2
+            ),
+            None,
+        )
+        after_title = False
+        if title_index is not None:
+            title = blocks.pop(title_index)
+            assert isinstance(title, Heading)
+            after_title = title_index == 0
+            para = Para(title.runs, 36, 45, ACCENT, bold=True)
+            shapes.append(
+                TextBox(
+                    SIDE, 0, BODY_W, HEADER_H, [para], anchor="ctr", name="タイトル"
+                )
+            )
+        layout = next(
+            (
+                c
+                for c in slide.cls.split()
+                if c
+                in ("cols", "image-right", "image-left", "table", "image", "center")
+            ),
+            "",
+        )
+        # 小見出しがヘッダーのすぐ下 (または本文の最初) なら上の余白を付けない
+        first_margin = not (
+            blocks and isinstance(blocks[0], Heading) and blocks[0].level == 3
+        )
+        del after_title
+        if layout == "cols":
+            self.cols(blocks, shapes, first_margin)
+        elif layout in ("image-right", "image-left"):
+            self.side_image(blocks, layout, shapes, first_margin)
+        elif layout == "center":
+            self.center(blocks, shapes)
+        elif layout in ("table", "image"):
+            self.centered_column(blocks, layout, shapes)
+        else:
+            self.flow(blocks, BODY_LEFT, BODY_TOP, BODY_W, NORMAL, shapes, first_margin)
+        self.footer(slide, number, total, shapes)
+        return PageShapes(WHITE, shapes)
+
+    def background(self, bg: Image, shapes: list[Shape]) -> None:
+        path = self.resolve(bg.src)
+        if not path:
+            return
+        iw, ih = image_size(path)
+        words = bg.alt.split()
+        if "contain" in words or "fit" in words:
+            x, y, w, h = contain(0, 0, SLIDE_W, SLIDE_H, iw, ih, upscale=True)
+            shapes.append(Picture(x, y, w, h, path, name="背景"))
+        else:
+            crop = cover_crop(iw, ih, SLIDE_W, SLIDE_H)
+            shapes.append(Picture(0, 0, SLIDE_W, SLIDE_H, path, crop=crop, name="背景"))
+
+    def cover(self, slide: Slide) -> PageShapes:
+        shapes: list[Shape] = []
+        for bg in slide.backgrounds:
+            self.background(bg, shapes)
+        blocks = list(slide.blocks)
+        width = SLIDE_W - 2 * COVER_SIDE
+        title_index = next(
+            (
+                i
+                for i, b in enumerate(blocks)
+                if isinstance(b, Heading) and b.level == 1
+            ),
+            None,
+        )
+        if title_index is not None:
+            title = blocks.pop(title_index)
+            assert isinstance(title, Heading)
+            para = Para(title.runs, 56, 72.8, WHITE, bold=True)
+            bottom = COVER_TITLE_H - COVER_TITLE_PAD - COVER_LINE
+            shapes.append(
+                TextBox(
+                    COVER_SIDE, 0, width, bottom, [para], anchor="b", name="タイトル"
+                )
+            )
+        shapes.append(
+            Rect(
+                COVER_SIDE,
+                COVER_TITLE_H - COVER_LINE,
+                width,
+                COVER_LINE,
+                WHITE,
+                "表紙の線",
+            )
+        )
+        y = COVER_TITLE_H + 28
+        paras: list[Para] = []
+        for n, block in enumerate(blocks):
+            if isinstance(block, Paragraph):
+                para = Para(block.runs, 28, 47.6, WHITE)
+                paras.append(para)
+            elif is_text(block):
+                ctx = Context(28, 1.7, WHITE)
+                sub, _ = text_paras(block, ctx, width)
+                for p in sub:
+                    p.color = WHITE
+                paras.extend(sub)
+        if paras:
+            height = SLIDE_H - y
+            shapes.append(
+                TextBox(COVER_SIDE, y, width, height, paras, name="部署名と日付")
+            )
+        return PageShapes(ACCENT, shapes)
+
+    def footer(
+        self, slide: Slide, number: int, total: int, shapes: list[Shape]
+    ) -> None:
+        top = SLIDE_H - FOOTER_H
+        if slide.paginate:
+            para = Para(
+                [Run(str(number)), Run(f" / {total}")],
+                18,
+                27,
+                MUTED,
+                field_slidenum=True,
+            )
+            shapes.append(
+                TextBox(
+                    SIDE, top, 400, FOOTER_H, [para], anchor="ctr", name="ページ番号"
+                )
+            )
+        if not slide.footer:
+            return
+        images = re.findall(r"!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?\s*\)", slide.footer)
+        if images:
+            right = SLIDE_W - SIDE
+            for alt, src in reversed(images):
+                path = self.resolve(src)
+                if not path:
+                    continue
+                iw, ih = image_size(path)
+                w = LOGO_H * iw / ih
+                right -= w
+                shapes.append(
+                    Picture(
+                        right,
+                        top + (FOOTER_H - LOGO_H) / 2,
+                        w,
+                        LOGO_H,
+                        path,
+                        alt,
+                        name="ロゴ",
+                    )
+                )
+            return
+        para = Para(parse_inline(slide.footer), 18, 27, MUTED, align="r")
+        shapes.append(
+            TextBox(SIDE, top, BODY_W, FOOTER_H, [para], anchor="ctr", name="フッター")
+        )
+
+    # -- 本文のレイアウト --
+
+    def cols(
+        self, blocks: list[Block], shapes: list[Shape], first_margin: bool
+    ) -> None:
+        h3 = [
+            i for i, b in enumerate(blocks) if isinstance(b, Heading) and b.level == 3
+        ]
+        split = h3[1] if len(h3) >= 2 else len(blocks)
+        col_w = (BODY_W - COLS_GAP) / 2
+        self.flow(
+            blocks[:split], BODY_LEFT, BODY_TOP, col_w, NORMAL, shapes, first_margin
+        )
+        if blocks[split:]:
+            x = BODY_LEFT + col_w + COLS_GAP
+            self.flow(blocks[split:], x, BODY_TOP, col_w, NORMAL, shapes, False)
+
+    def side_image(
+        self, blocks: list[Block], layout: str, shapes: list[Shape], first_margin: bool
+    ) -> None:
+        images = [i for i, b in enumerate(blocks) if isinstance(b, Image)]
+        text_w = SLIDE_W - 2 * SIDE - IMAGE_W - IMAGE_GAP
+        if layout == "image-right":
+            text_x, image_x = BODY_LEFT, SLIDE_W - SIDE - IMAGE_W
+        else:
+            text_x, image_x = SIDE + IMAGE_W + IMAGE_GAP, SIDE
+        if images:
+            image = blocks.pop(images[-1])
+            assert isinstance(image, Image)
+            path = self.resolve(image.src)
+            if path:
+                iw, ih = image_size(path)
+                box = contain(
+                    image_x, BODY_TOP, IMAGE_W, BODY_BOTTOM - BODY_TOP, iw, ih
+                )
+                shapes.append(Picture(*box, path, image.alt))
+        self.flow(blocks, text_x, BODY_TOP, text_w, NORMAL, shapes, first_margin)
+
+    def center(self, blocks: list[Block], shapes: list[Shape]) -> None:
+        """文字を大きく、上下左右の真ん中に置く (1 つのテキストボックスで、上下の中央ぞろえ)"""
+        ctx = Context(34, 1.6, TEXT, center=True, flex=True, layout="center")
+        texts = [b for b in blocks if is_text(b)]
+        others = [b for b in blocks if not is_text(b)]
+        paras: list[Para] = []
+        prev_bottom = 0.0
+        first_top = 0.0
+        for n, block in enumerate(texts):
+            top, bottom = block_margins(block, ctx)
+            sub, _ = text_paras(block, ctx, BODY_W)
+            if n == 0:
+                first_top = top
+            else:
+                sub[0].space_before += prev_bottom + top
+            paras.extend(sub)
+            prev_bottom = bottom
+        if paras:
+            shapes.append(
+                TextBox(
+                    BODY_LEFT,
+                    BODY_TOP,
+                    BODY_W,
+                    BODY_BOTTOM - BODY_TOP,
+                    paras,
+                    anchor="ctr",
+                    inset_t=first_top,
+                    name="本文",
+                )
+            )
+        if others:  # 表や画像は、文字の下に並べる (このレイアウトでは使わない想定)
+            self.flow(others, BODY_LEFT, BODY_TOP, BODY_W, NORMAL, shapes)
+
+    def centered_column(
+        self, blocks: list[Block], layout: str, shapes: list[Shape]
+    ) -> None:
+        """table / image: 本文を縦に並べ、全体を上下の真ん中に置く (余白は重ねない)"""
+        ctx = Context(26, 1.5, TEXT, center=True, flex=True, layout=layout)
+        avail = BODY_BOTTOM - BODY_TOP
+        items: list[tuple[Block, float, float, float]] = []  # (ブロック, 上, 高さ, 下)
+        image_index = None
+        for n, block in enumerate(blocks):
+            top, bottom = block_margins(block, ctx)
+            if n == len(blocks) - 1:
+                bottom = 0.0  # 最後の要素の下の余白は無し
+            if isinstance(block, Image) and layout == "image" and image_index is None:
+                image_index = n
+                top = bottom = 0.0
+                h = 0.0
+            elif is_text(block):
+                _, h = text_paras(block, ctx, BODY_W)
+            elif isinstance(block, Table):
+                tbl = self.table(block, 0, 0, BODY_W, ctx)
+                h = sum(tbl.row_heights) + 1
+            else:
+                h = self.place_block(block, 0, 0, BODY_W, ctx, [])
+            items.append((block, top, h, bottom))
+        used = sum(t + h + b for _, t, h, b in items)
+        if image_index is not None:
+            block, t, _, b = items[image_index]
+            items[image_index] = (block, t, max(avail - used, 0.0), b)
+            used = avail
+        y = BODY_TOP + (avail - used) / 2
+        for block, top, h, bottom in items:
+            y += top
+            if isinstance(block, Image) and layout == "image":
+                path = self.resolve(block.src)
+                if path:
+                    iw, ih = image_size(path)
+                    shapes.append(
+                        Picture(
+                            *contain(BODY_LEFT, y, BODY_W, h, iw, ih), path, block.alt
+                        )
+                    )
+            elif is_text(block):
+                paras, _ = text_paras(block, ctx, BODY_W)
+                shapes.append(TextBox(BODY_LEFT, y, BODY_W, h, paras))
+            elif isinstance(block, Table):
+                shapes.append(self.table(block, BODY_LEFT, y, BODY_W, ctx))
+            else:
+                self.place_block(block, BODY_LEFT, y, BODY_W, ctx, shapes)
+            y += h + bottom
+
+
+def header_runs(runs: list[Run]) -> list[Run]:
+    """見出しの行 (th) は太字"""
+    return [Run(r.text, True, r.italic, r.code, r.strike, r.link) for r in runs]
+
+
+def table_widths(
+    min_w: list[float], max_w: list[float], avail: float, full: bool
+) -> list[float]:
+    """表の列の幅 (ブラウザの table-layout: auto と同じ考え方)
+
+    - 全部の列が最大の幅で収まるとき: そのまま (full なら幅いっぱいまで比例して広げる)
+    - 収まらないとき: 最小の幅から、残りを (最大 - 最小) に比例して配る
+    """
+    total_max, total_min = sum(max_w), sum(min_w)
+    if total_max <= avail:
+        if full and total_max > 0:
+            return [w * avail / total_max for w in max_w]
+        return list(max_w)
+    if total_min >= avail:
+        return list(min_w)
+    extra = (avail - total_min) / (total_max - total_min)
+    return [lo + (hi - lo) * extra for lo, hi in zip(min_w, max_w)]
+
+
+# ---- PPTX (Office Open XML) を書く ----
+
+NS = (
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+    'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"'
+)
+XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+DOC_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+SVG_EXT_URI = "{96DAC541-7B7A-43D3-8B79-37D633B846F1}"
+SVG_NS = "http://schemas.microsoft.com/office/drawing/2016/SVG/main"
+SLIDENUM_FIELD_ID = "{B6F15528-21DE-4FAA-801E-634DDDAF4B2B}"
+INVALID_XML_RE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")
+
+
+def emu(px: float) -> int:
+    return round(px * EMU_PER_PX)
+
+
+def pt100(px: float) -> int:
+    """px を 1/100 pt にする (文字の大きさ・行の高さ・段落の間隔)"""
+    return round(px * 75)
+
+
+def esc(text: str) -> str:
+    text = INVALID_XML_RE.sub("", text)
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def png_1x1() -> bytes:
+    """SVG を表示できないソフト向けの代わりの画像 (透明な 1x1 の PNG)"""
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)
+    idat = zlib.compress(b"\x00\x00\x00\x00\x00")
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", idat)
+        + chunk(b"IEND", b"")
+    )
+
+
+class Package:
+    """PPTX の中のファイル (部品) を集めて zip に書く"""
+
+    def __init__(self) -> None:
+        self.parts: dict[str, bytes] = {}
+        self.overrides: dict[str, str] = {}
+        self.media: dict[Path, str] = {}  # 画像のパス -> 部品名
+        self.fallback: str | None = None
+
+    def add(
+        self, name: str, data: str | bytes, content_type: str | None = None
+    ) -> None:
+        self.parts[name] = data.encode("utf-8") if isinstance(data, str) else data
+        if content_type:
+            self.overrides[name] = content_type
+
+    def add_media(self, path: Path) -> str:
+        if path not in self.media:
+            ext = path.suffix.lower()
+            ext = ".jpeg" if ext == ".jpg" else ext
+            name = f"ppt/media/image{len(self.media) + 1}{ext}"
+            self.add(name, path.read_bytes())
+            self.media[path] = name
+        return self.media[path]
+
+    def fallback_png(self) -> str:
+        if not self.fallback:
+            self.fallback = "ppt/media/fallback.png"
+            self.add(self.fallback, png_1x1())
+        return self.fallback
+
+    def content_types(self) -> str:
+        defaults = {
+            "rels": "application/vnd.openxmlformats-package.relationships+xml",
+            "xml": "application/xml",
+        }
+        for name in self.parts:
+            ext = name.rsplit(".", 1)[-1]
+            if ext in ("svg", "png", "jpeg", "gif"):
+                defaults[ext] = ACCEPTED_IMAGES["." + ext]
+        items = [
+            f'<Default Extension="{e}" ContentType="{t}"/>' for e, t in defaults.items()
+        ]
+        items += [
+            f'<Override PartName="/{n}" ContentType="{t}"/>'
+            for n, t in self.overrides.items()
+        ]
+        return (
+            XML_HEAD
+            + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            + "".join(items)
+            + "</Types>"
+        )
+
+    def write(self, path: Path) -> None:
+        tmp = path.with_name(path.name + ".tmp")
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("[Content_Types].xml", self.content_types())
+            for name, data in self.parts.items():
+                zf.writestr(name, data)
+        tmp.replace(path)
+
+
+def rels_xml(rels: list[tuple[str, str, str]]) -> str:
+    """(Id, 種類, 行き先) の一覧を .rels の XML にする"""
+    items = []
+    for rid, kind, target in rels:
+        mode = ' TargetMode="External"' if kind == "hyperlink" else ""
+        kind_uri = kind if kind.startswith("http") else f"{DOC_REL}/{kind}"
+        items.append(
+            f'<Relationship Id="{rid}" Type="{kind_uri}" Target="{esc(target)}"{mode}/>'
+        )
+    return (
+        XML_HEAD
+        + f'<Relationships xmlns="{REL_NS}">'
+        + "".join(items)
+        + "</Relationships>"
+    )
+
+
+class SlideWriter:
+    """1 枚のスライドの XML を作る"""
+
+    def __init__(self, package: Package) -> None:
+        self.package = package
+        self.rels: list[tuple[str, str, str]] = [
+            ("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml")
+        ]
+        self.next_id = 2
+
+    def rel(self, kind: str, target: str) -> str:
+        for rid, k, t in self.rels:
+            if k == kind and t == target:
+                return rid
+        rid = f"rId{len(self.rels) + 1}"
+        self.rels.append((rid, kind, target))
+        return rid
+
+    def shape_id(self) -> int:
+        self.next_id += 1
+        return self.next_id - 1
+
+    def xml(self, page: PageShapes) -> str:
+        body = "".join(self.shape(s) for s in page.shapes)
+        return (
+            XML_HEAD
+            + f"<p:sld {NS}><p:cSld>"
+            + f'<p:bg><p:bgPr><a:solidFill><a:srgbClr val="{page.background}"/></a:solidFill>'
+            + "<a:effectLst/></p:bgPr></p:bg>"
+            + '<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+            + '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/>'
+            + '<a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
+            + body
+            + "</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>"
+        )
+
+    def shape(self, s: Shape) -> str:
+        if isinstance(s, TextBox):
+            return self.textbox(s)
+        if isinstance(s, Picture):
+            return self.picture(s)
+        if isinstance(s, Rect):
+            return self.rect(s)
+        return self.table(s)
+
+    @staticmethod
+    def xfrm(x: float, y: float, w: float, h: float, tag: str = "a:xfrm") -> str:
+        return (
+            f'<{tag}><a:off x="{emu(x)}" y="{emu(y)}"/>'
+            f'<a:ext cx="{max(emu(w), 0)}" cy="{max(emu(h), 0)}"/></{tag}>'
+        )
+
+    def rect(self, s: Rect) -> str:
+        sid = self.shape_id()
+        return (
+            f'<p:sp><p:nvSpPr><p:cNvPr id="{sid}" name="{esc(s.name)} {sid}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
+            f"<p:spPr>{self.xfrm(s.x, s.y, s.w, s.h)}"
+            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+            f'<a:solidFill><a:srgbClr val="{s.color}"/></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr>'
+            "</p:sp>"
+        )
+
+    def picture(self, s: Picture) -> str:
+        sid = self.shape_id()
+        media = self.package.add_media(s.path)
+        target = "../" + media.removeprefix("ppt/")
+        if media.endswith(".svg"):
+            png = self.rel(
+                "image", "../" + self.package.fallback_png().removeprefix("ppt/")
+            )
+            svg = self.rel("image", target)
+            blip = (
+                f'<a:blip r:embed="{png}"><a:extLst><a:ext uri="{SVG_EXT_URI}">'
+                f'<asvg:svgBlip xmlns:asvg="{SVG_NS}" r:embed="{svg}"/></a:ext></a:extLst></a:blip>'
+            )
+        else:
+            blip = f'<a:blip r:embed="{self.rel("image", target)}"/>'
+        left, top, right, bottom = (round(v * 100000) for v in s.crop)
+        crop = (
+            f'<a:srcRect l="{left}" t="{top}" r="{right}" b="{bottom}"/>'
+            if any((left, top, right, bottom))
+            else ""
+        )
+        return (
+            f'<p:pic><p:nvPicPr><p:cNvPr id="{sid}" name="{esc(s.name)} {sid}" descr="{esc(s.alt)}"/>'
+            '<p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>'
+            f"<p:blipFill>{blip}{crop}<a:stretch><a:fillRect/></a:stretch></p:blipFill>"
+            f"<p:spPr>{self.xfrm(s.x, s.y, s.w, s.h)}"
+            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>'
+        )
+
+    def textbox(self, s: TextBox) -> str:
+        sid = self.shape_id()
+        fill = (
+            f'<a:solidFill><a:srgbClr val="{s.fill}"/></a:solidFill>'
+            if s.fill
+            else "<a:noFill/>"
+        )
+        line = (
+            f'<a:ln w="{EMU_PER_PX}"><a:solidFill><a:srgbClr val="{s.border}"/></a:solidFill></a:ln>'
+            if s.border
+            else ""
+        )
+        body = (
+            f'<a:bodyPr wrap="square" lIns="{emu(s.inset_l)}" tIns="{emu(s.inset_t)}" '
+            f'rIns="{emu(s.inset_r)}" bIns="{emu(s.inset_b)}" anchor="{s.anchor}" rtlCol="0">'
+            "<a:noAutofit/></a:bodyPr><a:lstStyle/>"
+        )
+        return (
+            f'<p:sp><p:nvSpPr><p:cNvPr id="{sid}" name="{esc(s.name)} {sid}"/>'
+            '<p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>'
+            f"<p:spPr>{self.xfrm(s.x, s.y, s.w, s.h)}"
+            f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>{fill}{line}</p:spPr>'
+            f"<p:txBody>{body}{''.join(self.paragraph(p) for p in s.paras)}</p:txBody></p:sp>"
+        )
+
+    def table(self, s: TableShape) -> str:
+        sid = self.shape_id()
+        grid = "".join(f'<a:gridCol w="{emu(w)}"/>' for w in s.col_widths)
+        rows = []
+        for cells, h in zip(s.rows, s.row_heights):
+            tcs = []
+            for cell in cells:
+                border = "".join(
+                    f'<a:{side} w="{EMU_PER_PX}" cap="flat" cmpd="sng" algn="ctr">'
+                    f'<a:solidFill><a:srgbClr val="{BORDER}"/></a:solidFill>'
+                    '<a:prstDash val="solid"/></a:' + side + ">"
+                    for side in ("lnL", "lnR", "lnT", "lnB")
+                )
+                fill = (
+                    f'<a:solidFill><a:srgbClr val="{cell.fill}"/></a:solidFill>'
+                    if cell.fill
+                    else "<a:noFill/>"
+                )
+                paras = "".join(self.paragraph(p) for p in cell.paras)
+                tcs.append(
+                    f"<a:tc><a:txBody><a:bodyPr/><a:lstStyle/>{paras}</a:txBody>"
+                    f'<a:tcPr marL="{emu(cell.pad_x)}" marR="{emu(cell.pad_x)}" '
+                    f'marT="{emu(cell.pad_y)}" marB="{emu(cell.pad_y)}" anchor="ctr">'
+                    f"{border}{fill}</a:tcPr></a:tc>"
+                )
+            rows.append(f'<a:tr h="{emu(h)}">{"".join(tcs)}</a:tr>')
+        w, h = sum(s.col_widths), sum(s.row_heights)
+        return (
+            f'<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="{sid}" name="{esc(s.name)} {sid}"/>'
+            '<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/>'
+            f"</p:nvGraphicFramePr>{self.xfrm(s.x, s.y, w, h, 'p:xfrm')}"
+            '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">'
+            f'<a:tbl><a:tblPr firstRow="1" bandRow="1"/><a:tblGrid>{grid}</a:tblGrid>'
+            f"{''.join(rows)}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>"
+        )
+
+    def paragraph(self, p: Para) -> str:
+        attrs = f' algn="{p.align}"'
+        if p.level:
+            attrs = f' lvl="{p.level}"' + attrs
+        if p.mar_l or p.indent:
+            attrs = f' marL="{emu(p.mar_l)}" indent="{emu(p.indent)}"' + attrs
+        props = (
+            f'<a:lnSpc><a:spcPts val="{pt100(p.line)}"/></a:lnSpc>'
+            f'<a:spcBef><a:spcPts val="{pt100(p.space_before)}"/></a:spcBef>'
+            f'<a:spcAft><a:spcPts val="{pt100(p.space_after)}"/></a:spcAft>'
+        )
+        if p.autonum:
+            props += f'<a:buFont typeface="+mj-lt"/><a:buAutoNum type="{p.autonum}"'
+            props += f' startAt="{p.start}"/>' if p.start != 1 else "/>"
+        elif p.bullet:
+            props += f'<a:buFont typeface="{esc(p.bullet_font)}"/><a:buChar char="{esc(p.bullet)}"/>'
+        else:
+            props += "<a:buNone/>"
+        runs = []
+        for n, run in enumerate(p.runs):
+            if run.text == "\n":
+                runs.append(f"<a:br>{self.run_props(p, run)}</a:br>")
+            elif n == 0 and p.field_slidenum:
+                runs.append(
+                    f'<a:fld id="{SLIDENUM_FIELD_ID}" type="slidenum">'
+                    f"{self.run_props(p, run)}<a:t>{esc(run.text)}</a:t></a:fld>"
+                )
+            else:
+                runs.append(
+                    f"<a:r>{self.run_props(p, run)}<a:t>{esc(run.text)}</a:t></a:r>"
+                )
+        end = self.run_props(p, Run(""), tag="a:endParaRPr")
+        return f"<a:p><a:pPr{attrs}>{props}</a:pPr>{''.join(runs)}{end}</a:p>"
+
+    def run_props(self, p: Para, run: Run, tag: str = "a:rPr") -> str:
+        size = p.size * (0.85 if run.code else 1)
+        attrs = f'lang="ja-JP" altLang="en-US" sz="{pt100(size)}"'
+        if p.bold or run.bold:
+            attrs += ' b="1"'
+        if p.italic or run.italic:
+            attrs += ' i="1"'
+        if run.strike:
+            attrs += ' strike="sngStrike"'
+        attrs += ' dirty="0"'
+        inner = f'<a:solidFill><a:srgbClr val="{p.color}"/></a:solidFill>'
+        if run.code:
+            inner += f'<a:highlight><a:srgbClr val="{INLINE_CODE_BG}"/></a:highlight>'
+            fonts = (MONO_FONT, EA_FONT, MONO_FONT)
+        else:
+            fonts = (LATIN_FONT, EA_FONT, LATIN_FONT)
+        inner += (
+            f'<a:latin typeface="{fonts[0]}"/><a:ea typeface="{fonts[1]}"/>'
+            f'<a:cs typeface="{fonts[2]}"/>'
+        )
+        if run.link and tag == "a:rPr":
+            rid = self.rel("hyperlink", run.link)
+            inner += f'<a:hlinkClick r:id="{rid}"/>'
+        return f"<{tag} {attrs}>{inner}</{tag}>"
+
+
+def theme_xml() -> str:
+    colors = [
+        ("dk1", '<a:sysClr val="windowText" lastClr="000000"/>'),
+        ("lt1", f'<a:sysClr val="window" lastClr="{WHITE}"/>'),
+        ("dk2", f'<a:srgbClr val="{TEXT}"/>'),
+        ("lt2", '<a:srgbClr val="E7E6E6"/>'),
+        ("accent1", f'<a:srgbClr val="{ACCENT}"/>'),
+        ("accent2", '<a:srgbClr val="2C6CB0"/>'),
+        ("accent3", '<a:srgbClr val="A5A5A5"/>'),
+        ("accent4", '<a:srgbClr val="FFC000"/>'),
+        ("accent5", '<a:srgbClr val="5B9BD5"/>'),
+        ("accent6", '<a:srgbClr val="70AD47"/>'),
+        ("hlink", '<a:srgbClr val="0563C1"/>'),
+        ("folHlink", '<a:srgbClr val="954F72"/>'),
+    ]
+    clr = "".join(f"<a:{n}>{v}</a:{n}>" for n, v in colors)
+    font = (
+        f'<a:latin typeface="{LATIN_FONT}"/><a:ea typeface="{EA_FONT}"/><a:cs typeface="{LATIN_FONT}"/>'
+        f'<a:font script="Jpan" typeface="{EA_FONT}"/>'
+    )
+    solid = '<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>'
+    lines = "".join(
+        f'<a:ln w="{w}" cap="flat" cmpd="sng" algn="ctr">{solid}<a:prstDash val="solid"/></a:ln>'
+        for w in (6350, 12700, 19050)
+    )
+    return (
+        XML_HEAD
+        + '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="kit-slides">'
+        + f'<a:themeElements><a:clrScheme name="kit-slides">{clr}</a:clrScheme>'
+        + f'<a:fontScheme name="kit-slides"><a:majorFont>{font}</a:majorFont>'
+        + f"<a:minorFont>{font}</a:minorFont></a:fontScheme>"
+        + '<a:fmtScheme name="kit-slides">'
+        + f"<a:fillStyleLst>{solid * 3}</a:fillStyleLst>"
+        + f"<a:lnStyleLst>{lines}</a:lnStyleLst>"
+        + "<a:effectStyleLst>"
+        + "<a:effectStyle><a:effectLst/></a:effectStyle>" * 3
+        + "</a:effectStyleLst>"
+        + f"<a:bgFillStyleLst>{solid * 3}</a:bgFillStyleLst>"
+        + "</a:fmtScheme></a:themeElements><a:objectDefaults/><a:extraClrSchemeLst/></a:theme>"
+    )
+
+
+def text_levels() -> str:
+    """既定の文字の書式 (PowerPoint で新しく打った文字に使われる)"""
+    return "".join(
+        f'<a:lvl{n}pPr marL="{(n - 1) * 457200}" algn="l"><a:defRPr sz="1950">'
+        f'<a:solidFill><a:srgbClr val="{TEXT}"/></a:solidFill>'
+        '<a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/>'
+        f"</a:defRPr></a:lvl{n}pPr>"
+        for n in range(1, 4)
+    )
+
+
+def text_style(tag: str) -> str:
+    return f"<p:{tag}>{text_levels()}</p:{tag}>"
+
+
+EMPTY_TREE = (
+    '<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+    '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/>'
+    '<a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree>'
+)
+CLR_MAP = (
+    'bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" '
+    'accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" '
+    'hlink="hlink" folHlink="folHlink"'
+)
+CT = "application/vnd.openxmlformats-officedocument.presentationml"
+
+
+def build_package(pages: list[PageShapes], title: str) -> Package:
+    package = Package()
+    package.add(
+        "_rels/.rels",
+        rels_xml(
+            [
+                ("rId1", "officeDocument", "ppt/presentation.xml"),
+                (
+                    "rId2",
+                    "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties",
+                    "docProps/core.xml",
+                ),
+                ("rId3", "extended-properties", "docProps/app.xml"),
+            ]
+        ),
+    )
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    package.add(
+        "docProps/core.xml",
+        XML_HEAD
+        + '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
+        'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" '
+        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
+        f"<dc:title>{esc(title)}</dc:title>"
+        f'<dcterms:created xsi:type="dcterms:W3CDTF">{now}</dcterms:created>'
+        f'<dcterms:modified xsi:type="dcterms:W3CDTF">{now}</dcterms:modified>'
+        "</cp:coreProperties>",
+        "application/vnd.openxmlformats-package.core-properties+xml",
+    )
+    package.add(
+        "docProps/app.xml",
+        XML_HEAD
+        + '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">'
+        f"<Application>llm-assist-kit marp-slides</Application><Slides>{len(pages)}</Slides>"
+        "</Properties>",
+        "application/vnd.openxmlformats-officedocument.extended-properties+xml",
+    )
+    package.add(
+        "ppt/theme/theme1.xml",
+        theme_xml(),
+        "application/vnd.openxmlformats-officedocument.theme+xml",
+    )
+    package.add(
+        "ppt/slideMasters/slideMaster1.xml",
+        XML_HEAD + f"<p:sldMaster {NS}><p:cSld>"
+        '<p:bg><p:bgRef idx="1001"><a:schemeClr val="bg1"/></p:bgRef></p:bg>'
+        f"{EMPTY_TREE}</p:cSld><p:clrMap {CLR_MAP}/>"
+        '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>'
+        f"<p:txStyles>{text_style('titleStyle')}{text_style('bodyStyle')}{text_style('otherStyle')}</p:txStyles>"
+        "</p:sldMaster>",
+        f"{CT}.slideMaster+xml",
+    )
+    package.add(
+        "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+        rels_xml(
+            [
+                ("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"),
+                ("rId2", "theme", "../theme/theme1.xml"),
+            ]
+        ),
+    )
+    package.add(
+        "ppt/slideLayouts/slideLayout1.xml",
+        XML_HEAD
+        + f'<p:sldLayout {NS} type="blank" preserve="1"><p:cSld name="白紙">{EMPTY_TREE}</p:cSld>'
+        "<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>",
+        f"{CT}.slideLayout+xml",
+    )
+    package.add(
+        "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+        rels_xml([("rId1", "slideMaster", "../slideMasters/slideMaster1.xml")]),
+    )
+    pres_rels = [("rId1", "slideMaster", "slideMasters/slideMaster1.xml")]
+    slide_ids = []
+    for n, page in enumerate(pages, start=1):
+        writer = SlideWriter(package)
+        xml = writer.xml(page)
+        package.add(f"ppt/slides/slide{n}.xml", xml, f"{CT}.slide+xml")
+        package.add(f"ppt/slides/_rels/slide{n}.xml.rels", rels_xml(writer.rels))
+        rid = f"rId{n + 1}"
+        pres_rels.append((rid, "slide", f"slides/slide{n}.xml"))
+        slide_ids.append(f'<p:sldId id="{255 + n}" r:id="{rid}"/>')
+    k = len(pages) + 2
+    pres_rels += [
+        (f"rId{k}", "presProps", "presProps.xml"),
+        (f"rId{k + 1}", "viewProps", "viewProps.xml"),
+        (f"rId{k + 2}", "theme", "theme/theme1.xml"),
+        (f"rId{k + 3}", "tableStyles", "tableStyles.xml"),
+    ]
+    package.add(
+        "ppt/presentation.xml",
+        XML_HEAD + f'<p:presentation {NS} saveSubsetFonts="1">'
+        '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>'
+        f"<p:sldIdLst>{''.join(slide_ids)}</p:sldIdLst>"
+        f'<p:sldSz cx="{emu(SLIDE_W)}" cy="{emu(SLIDE_H)}"/><p:notesSz cx="6858000" cy="9144000"/>'
+        f"<p:defaultTextStyle>{text_levels()}</p:defaultTextStyle>"
+        "</p:presentation>",
+        f"{CT}.presentation.main+xml",
+    )
+    package.add("ppt/_rels/presentation.xml.rels", rels_xml(pres_rels))
+    package.add(
+        "ppt/presProps.xml",
+        XML_HEAD + f"<p:presentationPr {NS}/>",
+        f"{CT}.presProps+xml",
+    )
+    package.add(
+        "ppt/viewProps.xml",
+        XML_HEAD
+        + f'<p:viewPr {NS}><p:normalViewPr><p:restoredLeft sz="15620"/><p:restoredTop sz="94660"/>'
+        '</p:normalViewPr><p:gridSpacing cx="76200" cy="76200"/></p:viewPr>',
+        f"{CT}.viewProps+xml",
+    )
+    package.add(
+        "ppt/tableStyles.xml",
+        XML_HEAD
+        + '<a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"/>',
+        "application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml",
+    )
+    return package
+
+
+def convert(source: Path, output: Path) -> list[str]:
+    """Markdown のファイルを、編集できる PPTX にする。警告の一覧を返す"""
+    slides = parse_markdown(source.read_text(encoding="utf-8"))
+    warnings: list[str] = []
+    layout = Layout(source.parent, warnings)
+    total = len(slides)
+    pages = [layout.slide(slide, n, total) for n, slide in enumerate(slides, start=1)]
+    title = next(
+        (
+            plain_text(b.runs)
+            for s in slides
+            for b in s.blocks
+            if isinstance(b, Heading) and b.level in (1, 2)
+        ),
+        source.stem,
+    )
+    build_package(pages, title).write(output)
+    return list(dict.fromkeys(warnings))
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Marp のスライドを、編集できる PPTX にする"
+    )
+    parser.add_argument("slides", type=Path, help="スライドの Markdown ファイル")
+    parser.add_argument("-o", "--output", type=Path, help="出力ファイル (.pptx)")
+    args = parser.parse_args(argv)
+    source: Path = args.slides
+    if not source.is_file():
+        print(f"スライドのファイルがありません: {source}", file=sys.stderr)
+        return 1
+    output: Path = args.output or source.with_suffix(".pptx")
+    for message in convert(source, output):
+        print(f"警告: {message}", file=sys.stderr)
+    print(f"作成しました: {output}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

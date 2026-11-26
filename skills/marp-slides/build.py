@@ -15,25 +15,23 @@
   .bin/ に取り出して使う。zip にこの OS 用が無ければ、`marp` コマンド、
   `npx @marp-team/marp-cli` (Node.js が必要) の順に探す
 - PDF / PPTX の書き出しには Chrome か Edge (Windows には標準で入っている) が必要
-- --pptx-editable は Marp CLI の試験的な機能で、LibreOffice が必要。文字は編集できるが、
-  箇条書きや表は行ごとのテキストボックスになり、見た目が少し崩れることがある。
-  書き出しはフォントをメイリオ 1 種類にしたテーマ (theme-editable.css) で行い、その後
-  PPTX の中のフォント名を「半角英数は Segoe UI、日本語はメイリオ」に、
-  別の文字になったもの (康煕部首の "⽉" など) を元の文字に直す
+- --pptx-editable は Marp CLI を使わず、editable_pptx.py (標準ライブラリだけ) で
+  Markdown から直接 PPTX を作る。文字・箇条書き・表を PowerPoint で編集でき、
+  位置と大きさはテーマ (theme.css) の寸法に合わせる。Chrome / Edge / LibreOffice は不要
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import platform
-import re
 import shutil
 import stat
 import subprocess
 import sys
-import unicodedata
 import zipfile
 from pathlib import Path
+from types import ModuleType
 
 SKILL_DIR = Path(__file__).resolve().parent
 THEME = SKILL_DIR / "theme.css"
@@ -43,24 +41,9 @@ ZIP_PATH = SKILL_DIR / "marp.zip"  # tools/build_marp_zip.py で作る
 CACHE_DIR = SKILL_DIR / ".bin"  # zip から取り出した実行ファイルの置き場 (git 管理外)
 MARP_PACKAGE = "@marp-team/marp-cli"
 FORMATS = ["pdf", "html", "pptx"]
-# 文字を編集できる PPTX (Marp CLI の試験的な機能。LibreOffice で PDF を変換して作る)
+# 文字を編集できる PPTX (editable_pptx.py で Markdown から直接作る。Marp CLI は使わない)
 EDITABLE_PPTX = "pptx-editable"
-# 編集できる PPTX を書き出すときのテーマ (フォントをメイリオ 1 種類にしたもの。
-# 半角英数と日本語でフォントが変わると、LibreOffice がその切れ目で文字の箱を分けるため)
-EDITABLE_THEME = SKILL_DIR / "theme-editable.css"
-EDITABLE_THEME_NAME = "kit-slides-editable"
-# テーマ (theme.css の --kit-font) のフォント。半角英数と全角 (日本語)
-LATIN_FONT = "Segoe UI"
-EA_FONT = "Meiryo"
-# 編集できる PPTX の中で、テーマのフォントに直すフォント名
-# (LibreOffice が PDF から付ける "Meiryo" / "Meiryo-Bold" / "SegoeUI" や、既定の "Noto Serif JP")
-SLIDE_FONT_RE = re.compile(
-    r'<a:(latin|ea|cs) typeface="(?:Meiryo[^"]*|SegoeUI[^"]*|Noto Serif JP)"'
-)
-# テーマ・マスター・レイアウトの既定フォント (PowerPoint で文字を打ち足したときに使われる)
-DEFAULT_FONT_RE = re.compile(r'<a:(latin|ea|cs) typeface="[^"]*"')
-DEFAULT_FONT_PARTS = ("ppt/theme/", "ppt/slideMasters/", "ppt/slideLayouts/")
-TEXT_RE = re.compile(r"(<a:t>)([^<]*)(</a:t>)")
+EDITABLE_MODULE = SKILL_DIR / "editable_pptx.py"
 
 
 def copy_default_assets(slides: Path) -> list[Path]:
@@ -133,33 +116,24 @@ def marp_command() -> list[str]:
     )
 
 
-def format_options(fmt: str) -> list[str]:
-    """形式を Marp CLI のオプションにする"""
-    if fmt == EDITABLE_PPTX:
-        return ["--pptx", "--pptx-editable"]
-    return [f"--{fmt}"]
-
-
-def theme_options(fmt: str) -> list[str]:
-    """テーマのオプション (編集できる PPTX は、フォントをメイリオ 1 種類にしたテーマで)"""
-    if fmt == EDITABLE_PPTX:
-        return [
-            "--theme-set",
-            str(THEME),
-            str(EDITABLE_THEME),
-            "--theme",
-            EDITABLE_THEME_NAME,
-        ]
-    return ["--theme-set", str(THEME)]
+def load_editable_pptx() -> ModuleType:
+    """editable_pptx.py を読み込む (build.py をどこから実行しても使えるように、パスで読む)"""
+    spec = importlib.util.spec_from_file_location("editable_pptx", EDITABLE_MODULE)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # dataclass が自分のモジュールを探せるように
+    spec.loader.exec_module(module)
+    return module
 
 
 def build_command(slides: Path, fmt: str, output: Path) -> list[str]:
     return [
         *marp_command(),
         str(slides),
-        *theme_options(fmt),
+        "--theme-set",
+        str(THEME),
         "--allow-local-files",
-        *format_options(fmt),
+        f"--{fmt}",
         "-o",
         str(output),
     ]
@@ -184,7 +158,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         dest="format",
         action="store_const",
         const=EDITABLE_PPTX,
-        help="文字を編集できる PPTX で書き出す (試験的。LibreOffice が必要)",
+        help="文字を編集できる PPTX で書き出す (Marp CLI もブラウザも不要)",
     )
     parser.add_argument("-o", "--output", type=Path, help="出力ファイル")
     args = parser.parse_args(argv)
@@ -195,65 +169,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-def _theme_font(m: re.Match[str]) -> str:
-    """<a:latin> / <a:cs> は Segoe UI、<a:ea> (日本語などの文字) はメイリオにする"""
-    font = EA_FONT if m.group(1) == "ea" else LATIN_FONT
-    return f'<a:{m.group(1)} typeface="{font}"'
-
-
-def fix_font_names(xml: str, part: str) -> str:
-    """PPTX の 1 つの XML (part はその中のパス) のフォント名をテーマのフォントにそろえる
-
-    PowerPoint は 1 つの文字の箱の中でも、半角英数は <a:latin>、日本語は <a:ea> の
-    フォントで表示するので、メイリオ 1 種類で書き出した文字もこれで Segoe UI と
-    メイリオに分かれる。ロゴの文字 (Arial) などはそのままにする。
-    """
-    if part.startswith(DEFAULT_FONT_PARTS):
-        return DEFAULT_FONT_RE.sub(_theme_font, xml)
-    return SLIDE_FONT_RE.sub(_theme_font, xml)
-
-
-def normalize_char(ch: str) -> str:
-    """PDF から読み取られて別の文字になったものを元に戻す
-
-    - 康煕部首・CJK 部首補助 (例 "⽉" U+2F49) → 漢字 ("月")
-    - 縦書き用の約物 (例 "︓" U+FE13) → 全角の約物 ("：")
-    """
-    code = ord(ch)
-    if 0x2E80 <= code <= 0x2FDF:
-        return unicodedata.normalize("NFKC", ch)
-    if 0xFE10 <= code <= 0xFE19 or 0xFE30 <= code <= 0xFE4F:
-        n = unicodedata.normalize("NFKC", ch)
-        if n == "...":
-            return "…"
-        if len(n) == 1 and "!" <= n <= "~":
-            return chr(ord(n) + 0xFEE0)  # 半角の記号を全角にする (":" → "：")
-        return n
-    return ch
-
-
-def normalize_text(text: str) -> str:
-    return "".join(normalize_char(ch) for ch in text)
-
-
-def _fix_text(m: re.Match[str]) -> str:
-    return m.group(1) + normalize_text(m.group(2)) + m.group(3)
-
-
-def fix_editable_pptx(path: Path) -> None:
-    """編集できる PPTX のフォント名と文字を直す (上書き)"""
-    tmp = path.with_name(path.name + ".tmp")
-    with zipfile.ZipFile(path) as src, zipfile.ZipFile(tmp, "w") as dst:
-        for info in src.infolist():
-            data = src.read(info)
-            name = info.filename
-            if name.endswith(".xml"):
-                xml = fix_font_names(data.decode("utf-8"), name)
-                if name.startswith("ppt/slides/"):
-                    xml = TEXT_RE.sub(_fix_text, xml)
-                data = xml.encode("utf-8")
-            dst.writestr(info, data)
-    tmp.replace(path)
+def build_editable_pptx(slides: Path, output: Path) -> int:
+    """文字を編集できる PPTX を作る (Marp CLI は使わない)"""
+    for message in load_editable_pptx().convert(slides, output):
+        print(f"警告: {message}", file=sys.stderr)
+    print(f"作成しました: {output}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -271,6 +192,9 @@ def main(argv: list[str] | None = None) -> int:
     for path in copy_default_assets(slides):
         print(f"既定の画像をコピーしました: {path}")
 
+    if args.format == EDITABLE_PPTX:
+        return build_editable_pptx(slides, output)
+
     try:
         command = build_command(slides, args.format, output)
     except FileNotFoundError as e:
@@ -280,15 +204,7 @@ def main(argv: list[str] | None = None) -> int:
     if result.returncode != 0:
         message = f"Marp CLI が失敗しました (終了コード {result.returncode})"
         print(message, file=sys.stderr)
-        if args.format == EDITABLE_PPTX:
-            print(
-                "編集できる PPTX には LibreOffice が必要です "
-                "(https://www.libreoffice.org/)。",
-                file=sys.stderr,
-            )
         return result.returncode
-    if args.format == EDITABLE_PPTX:
-        fix_editable_pptx(output)
     print(f"作成しました: {output}")
     return 0
 

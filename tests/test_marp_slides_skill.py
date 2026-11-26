@@ -221,156 +221,38 @@ def test_formats_are_exclusive():
         build.parse_args(["s.md", "--pptx", "--pptx-editable"])
 
 
-def test_editable_pptx_writes_pptx_with_editable_option(
-    slides: Path, monkeypatch: pytest.MonkeyPatch
-):
-    slides = slides.resolve()
-    calls: list[list[str]] = []
-    monkeypatch.setattr(build, "marp_command", lambda: ["marp"])
-    monkeypatch.setattr(
-        build.subprocess,
-        "run",
-        lambda cmd: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0),
-    )
-    monkeypatch.setattr(build, "fix_editable_pptx", lambda path: None)
-
-    assert build.main([str(slides), "--pptx-editable"]) == 0
-
-    [command] = calls
-    assert command[2:7] == build.theme_options("pptx-editable")
-    assert command[-4:] == [
-        "--pptx",
-        "--pptx-editable",
-        "-o",
-        str(slides.with_suffix(".pptx")),
-    ]
-
-
-def test_editable_pptx_failure_mentions_libreoffice(
+def test_editable_pptx_is_made_without_marp(
     slides: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-    monkeypatch.setattr(build, "marp_command", lambda: ["marp"])
+    """--pptx-editable は Marp CLI もブラウザも使わず、Python だけで PPTX を作る"""
+    monkeypatch.setattr(build, "marp_command", lambda: pytest.fail("Marp CLI を呼んだ"))
     monkeypatch.setattr(
-        build.subprocess, "run", lambda cmd: subprocess.CompletedProcess(cmd, 1)
+        build.subprocess, "run", lambda cmd: pytest.fail("外部コマンドを呼んだ")
     )
 
-    assert build.main([str(slides), "--pptx-editable"]) == 1
-    assert "LibreOffice" in capsys.readouterr().err
+    assert build.main([str(slides), "--pptx-editable"]) == 0
+
+    out = slides.resolve().with_suffix(".pptx")
+    with zipfile.ZipFile(out) as zf:
+        assert "ppt/slides/slide1.xml" in zf.namelist()
+        assert "<a:t>t</a:t>" in zf.read("ppt/slides/slide1.xml").decode("utf-8")
+    assert f"作成しました: {out}" in capsys.readouterr().out
 
 
 def test_theme_fonts_are_segoe_ui_then_meiryo():
-    """半角英数は Segoe UI、全角 (日本語) はメイリオ (Segoe UI に無い字形だけメイリオになる)"""
+    """半角英数は Segoe UI、全角 (日本語) はメイリオ。編集できる PPTX も同じフォント"""
     css = (SKILL / "theme.css").read_text(encoding="utf-8")
     assert '--kit-font: "Segoe UI", "Meiryo"' in css
-    assert (build.LATIN_FONT, build.EA_FONT) == ("Segoe UI", "Meiryo")
+    pptx = build.load_editable_pptx()
+    assert (pptx.LATIN_FONT, pptx.EA_FONT) == ("Segoe UI", "Meiryo")
 
 
-def test_editable_theme_uses_meiryo_only():
-    """編集できる PPTX は、フォントをメイリオ 1 種類にしたテーマで書き出す"""
-    css = (SKILL / "theme-editable.css").read_text(encoding="utf-8")
-    assert f"/* @theme {build.EDITABLE_THEME_NAME} */" in css
-    assert '@import "kit-slides";' in css
-    assert '--kit-font: "Meiryo"' in css
-    assert build.theme_options("pptx-editable") == [
-        "--theme-set",
-        str(build.THEME),
-        str(build.EDITABLE_THEME),
-        "--theme",
-        "kit-slides-editable",
-    ]
-    assert build.theme_options("pdf") == ["--theme-set", str(build.THEME)]
-
-
-def test_fix_font_names_in_slides():
-    """英数字 (latin) は Segoe UI、日本語 (ea) はメイリオ。ロゴの Arial などはそのまま"""
-    xml = (
-        '<a:latin typeface="Meiryo"/><a:ea typeface="Meiryo"/>'
-        '<a:latin typeface="Meiryo-Bold"/><a:ea typeface="SegoeUI-Bold"/>'
-        '<a:latin typeface="Noto Serif JP"/><a:latin typeface="Arial"/>'
-    )
-    assert build.fix_font_names(xml, "ppt/slides/slide1.xml") == (
-        '<a:latin typeface="Segoe UI"/><a:ea typeface="Meiryo"/>'
-        '<a:latin typeface="Segoe UI"/><a:ea typeface="Meiryo"/>'
-        '<a:latin typeface="Segoe UI"/><a:latin typeface="Arial"/>'
-    )
-
-
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ("2026年11⽉25⽇", "2026年11月25日"),  # 康煕部首 → 漢字
-        ("試験運⽤・⼯数", "試験運用・工数"),
-        ("2024年度︓⽉", "2024年度：月"),  # 縦書き用のコロン → 全角のコロン
-        ("︐︑︒︙", "，、。…"),
-        ("（見込み）1,500 件", "（見込み）1,500 件"),  # ふつうの文字はそのまま
-    ],
-)
-def test_normalize_text(text: str, expected: str):
-    assert build.normalize_text(text) == expected
-
-
-@pytest.mark.parametrize(
-    "part",
-    [
-        "ppt/theme/theme1.xml",
-        "ppt/slideMasters/slideMaster1.xml",
-        "ppt/slideLayouts/slideLayout1.xml",
-    ],
-)
-def test_fix_font_names_sets_default_fonts(part: str):
-    """PowerPoint で文字を打ち足したときのフォントもそろえる"""
-    xml = (
-        '<a:latin typeface="Arial"/><a:ea typeface="DejaVu Sans"/>'
-        '<a:cs typeface="DejaVu Sans"/>'
-    )
-    assert build.fix_font_names(xml, part) == (
-        '<a:latin typeface="Segoe UI"/><a:ea typeface="Meiryo"/>'
-        '<a:cs typeface="Segoe UI"/>'
-    )
-
-
-PNG_WITH_FONT_TEXT = b'\x89PNG typeface="SegoeUI"'
-
-
-def test_fix_editable_pptx_rewrites_xml_and_keeps_other_files(tmp_path: Path):
-    pptx = tmp_path / "deck.pptx"
-    slide_xml = '<a:rPr><a:latin typeface="Meiryo"/></a:rPr><a:t>⽉︓&amp;A</a:t>'
-    with zipfile.ZipFile(pptx, "w") as zf:
-        zf.writestr("[Content_Types].xml", "<Types/>")
-        zf.writestr("ppt/slides/slide1.xml", slide_xml)
-        zf.writestr("ppt/slideMasters/slideMaster1.xml", "<a:t>⽉</a:t>")
-        zf.writestr("ppt/media/image1.png", PNG_WITH_FONT_TEXT)
-
-    build.fix_editable_pptx(pptx)
-
-    with zipfile.ZipFile(pptx) as zf:
-        assert zf.namelist()[0] == "[Content_Types].xml"
-        slide = zf.read("ppt/slides/slide1.xml").decode("utf-8")
-        expected = '<a:rPr><a:latin typeface="Segoe UI"/></a:rPr><a:t>月：&amp;A</a:t>'
-        assert slide == expected
-        # 文字を直すのはスライドだけ、XML 以外はそのまま
-        master = zf.read("ppt/slideMasters/slideMaster1.xml").decode("utf-8")
-        assert master == "<a:t>⽉</a:t>"
-        assert zf.read("ppt/media/image1.png") == PNG_WITH_FONT_TEXT
-    assert not (tmp_path / "deck.pptx.tmp").exists()
-
-
-def test_editable_pptx_is_fixed_after_export(
-    slides: Path, monkeypatch: pytest.MonkeyPatch
-):
-    fixed: list[Path] = []
-    monkeypatch.setattr(build, "marp_command", lambda: ["marp"])
-    monkeypatch.setattr(
-        build.subprocess, "run", lambda cmd: subprocess.CompletedProcess(cmd, 0)
-    )
-    monkeypatch.setattr(build, "fix_editable_pptx", fixed.append)
-
-    assert build.main([str(slides), "--pptx-editable"]) == 0
-    assert fixed == [slides.resolve().with_suffix(".pptx")]
-    assert build.main([str(slides), "--pptx"]) == 0
-    assert len(fixed) == 1  # 画像の PPTX はそのまま
+def test_no_libreoffice_theme():
+    """LibreOffice を使う古い方式のテーマは無い"""
+    assert not (SKILL / "theme-editable.css").exists()
+    assert "LibreOffice" not in (SKILL / "SKILL.md").read_text(encoding="utf-8")
 
 
 def test_main_reports_missing_file(tmp_path: Path):
