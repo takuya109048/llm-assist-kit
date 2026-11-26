@@ -471,7 +471,11 @@ def load_skills(dirs: list[Path], only: list[str] | None, root: Path) -> list[Sk
                 name=name,
                 description=meta.get("description", ""),
                 dir=rel_dir,
-                body=body.replace("${SKILL_DIR}", rel_dir),
+                # ${SKILL_DIR} はこのスキルのフォルダ、${SKILLS_DIR} はスキルを並べたフォルダ
+                # (ほかのスキルのスクリプトを ${SKILLS_DIR}/<名前>/... で指す)
+                body=body.replace("${SKILL_DIR}", rel_dir).replace(
+                    "${SKILLS_DIR}", display_path(base, root)
+                ),
                 files=files,
             )
     if only:

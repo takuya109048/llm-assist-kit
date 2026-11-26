@@ -218,7 +218,7 @@ slideinit
 +- 要点 1
 +- 要点 2
 *** End Patch
-'@ | python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/../apply-patch/apply.py -f -
+'@ | python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/apply-patch/apply.py -f -
 ```
 
 ### スライドの形 (必ずこの形)

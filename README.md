@@ -150,6 +150,8 @@ python ${CTX} run -- python ${SKILL_DIR}/my_script.py
 
 - `name` / `description` は省略可 (`name` の既定はフォルダ名)
 - 本文の `${SKILL_DIR}` はスキルフォルダの実際のパス (例 `C:/tools/llm-assist-kit/skills/apply-patch`)、
+  `${SKILLS_DIR}` はスキルを並べたフォルダ (例 `C:/tools/llm-assist-kit/skills`。ほかのスキルのスクリプトを
+  `${SKILLS_DIR}/apply-patch/apply.py` のように指すときに使う)、
   `${CTX}` は ctx.py の実際のパスに置き換わるので、LLM はそのまま実行できるコマンドを示せます
 - スキル欄の先頭には「あなたはコマンドを実行できない。実行はユーザーに `python <ctx.py> run -- ...` で依頼し、
   貼られた結果を待つこと」という説明が自動で付きます

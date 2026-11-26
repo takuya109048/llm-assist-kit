@@ -40,6 +40,8 @@ def test_skill_md_is_valid(skill_dir: Path):
     assert "python ${CTX} run --" in body
     for ref in re.findall(r"\$\{SKILL_DIR\}/([\w./-]+)", body):
         assert (skill_dir / ref).is_file(), ref
+    for ref in re.findall(r"\$\{SKILLS_DIR\}/([\w./-]+)", body):
+        assert (KIT_SKILLS / ref).is_file(), ref
 
 
 def test_no_reference_to_removed_skills():

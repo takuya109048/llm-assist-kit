@@ -49,7 +49,7 @@ slideinit
 +- 要点 1
 +- 要点 2
 *** End Patch
-'@ | python ${CTX} run -- python ${SKILL_DIR}/../apply-patch/apply.py -f -
+'@ | python ${CTX} run -- python ${SKILLS_DIR}/apply-patch/apply.py -f -
 ```
 
 ### スライドの形 (必ずこの形)
