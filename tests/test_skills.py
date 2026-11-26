@@ -130,6 +130,13 @@ def test_load_skills_substitutes_skill_dir(root: Path, kit: Path):
     assert skill.body == f"python {d}/a.py {d}/b"
 
 
+def test_load_skills_substitutes_skills_dir(root: Path, kit: Path):
+    """${SKILLS_DIR} はスキルを並べたフォルダ (ほかのスキルのスクリプトを指すのに使う)"""
+    write(kit, "s/SKILL.md", skill_md("s", body="python ${SKILLS_DIR}/t/x.py"))
+    (skill,) = ctx.load_skills([kit], None, root)
+    assert skill.body == f"python {kit.resolve().as_posix()}/t/x.py"
+
+
 def test_load_skills_select_in_given_order(root: Path, kit: Path):
     for n in ["a", "b", "c"]:
         write(kit, f"{n}/SKILL.md", skill_md(n))

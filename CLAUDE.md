@@ -15,7 +15,8 @@ poetry、conda は使わないでください。ロックファイルはあり�
   何もインストールせずに他のプロジェクトで実行します。実行時の依存関係を追加しないこと。
 - スキルは対象プロジェクトではなく `skills/<name>/` (`SKILL.md` と任意のスクリプト) に
   置く。スキルのスクリプトも標準ライブラリだけを使う。`SKILL.md` では、パスを
-  `${SKILL_DIR}/...`、実行コマンドを `python ${CTX} run -- ...` と書く。
+  `${SKILL_DIR}/...` (ほかのスキルのファイルは `${SKILLS_DIR}/<名前>/...`)、実行コマンドを
+  `python ${CTX} run -- ...` と書く。
 - `skills/apply-patch/apply_patch.zip` にはビルド済みの codex-rs `apply_patch` バイナリが
   入っている。手で編集せず、`python tools/build_apply_patch.py` で再ビルドすること
   (rustup、git、mingw-w64 が必要)。`.build/` と `skills/apply-patch/.bin/` はコミットしない。

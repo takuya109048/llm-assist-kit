@@ -64,6 +64,9 @@ python install.py
 | `addcommit` | `git add -A` と `git commit -m` をまとめて行う。`addcommit メッセージ` (空白で区切った語はつなげて 1 つのメッセージにする) |
 | `reset` | `git reset --hard HEAD` と `git clean -fd` をまとめて行い、最後のコミットの状態に戻す。消える内容を表示して確認してから実行 (`reset -y` で確認なし)。`.gitignore` で無視しているファイルは残る |
 | `init` | 新しいプロジェクトのフォルダで実行すると、`AGENTS.md` (冒頭プロンプトのひな形)・`.ctxignore`・`.gitignore` を作り、`git init` する。すでにあるファイルは上書きしない。`init <フォルダ>` でフォルダを指定 (無ければ作る)、`init --no-git` で git init を省く。Box・OneDrive などで git が「dubious ownership」と言うフォルダは、git の `safe.directory` に登録して使えるようにする |
+| `slideinit` | スライドのフォルダ (既定 `slides/`、`slideinit <フォルダ>` で指定) に、既定の画像 (`assets/background.svg`・`logo.svg`・`placeholder.svg`)・テーマ (`assets/kit-slides.css`)・VS Code のプレビュー用の設定 (`.vscode/settings.json`) をそろえる。何度実行しても同じで、既にある画像は上書きしない。marp-slides スキルは、スライドを新しく作るパッチの前にこれを入れる |
+| `slidepdf` | スライドを PDF にする。`slidepdf slides/発表.md` (省くと `slides/` の `*.md` をすべて) |
+| `slidepptx` | スライドを文字を編集できる PowerPoint (PPTX) にする。使い方は `slidepdf` と同じ |
 
 ### 使い方 (PowerShell、プロジェクトのフォルダで)
 
@@ -147,6 +150,8 @@ python ${CTX} run -- python ${SKILL_DIR}/my_script.py
 
 - `name` / `description` は省略可 (`name` の既定はフォルダ名)
 - 本文の `${SKILL_DIR}` はスキルフォルダの実際のパス (例 `C:/tools/llm-assist-kit/skills/apply-patch`)、
+  `${SKILLS_DIR}` はスキルを並べたフォルダ (例 `C:/tools/llm-assist-kit/skills`。ほかのスキルのスクリプトを
+  `${SKILLS_DIR}/apply-patch/apply.py` のように指すときに使う)、
   `${CTX}` は ctx.py の実際のパスに置き換わるので、LLM はそのまま実行できるコマンドを示せます
 - スキル欄の先頭には「あなたはコマンドを実行できない。実行はユーザーに `python <ctx.py> run -- ...` で依頼し、
   貼られた結果を待つこと」という説明が自動で付きます
@@ -211,12 +216,16 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
   文字を編集できる PowerPoint [`examples/marp-slides-example.pptx`](examples/marp-slides-example.pptx)
 
 ```powershell
-python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md          # PDF
-python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md --pptx   # PowerPoint (各スライドは画像)
-python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md --pptx-editable  # 文字を編集できる PowerPoint
+slideinit                     # slides/ に既定の画像・テーマ・VS Code の設定をそろえる (最初の 1 回)
+slidepdf slides/発表.md        # PDF
+slidepptx slides/発表.md       # 文字を編集できる PowerPoint
 ```
 
-- `--pptx-editable` は Marp CLI を使わず、[`editable_pptx.py`](skills/marp-slides/editable_pptx.py)
+- スライドを新しく作るとき、LLM はパッチのコマンドと同じコードブロックに `slideinit` を入れて出します
+  (1 回貼れば、フォルダの準備とスライドの作成がまとめて済みます)
+- 関数を使わない場合は `python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md` (PowerPoint は `--pptx` を付ける)
+
+- `--pptx` は Marp CLI を使わず、[`editable_pptx.py`](skills/marp-slides/editable_pptx.py)
   (標準ライブラリだけ) が Markdown から直接 PPTX を作ります。Chrome / Edge / LibreOffice も不要です。
   - 文字は PowerPoint の段落、箇条書きと番号付きリストは PowerPoint の箇条書き、表は PowerPoint の表、
     画像・線・ロゴは個別の図形になり、そのまま編集できます。ページ番号はスライド番号のフィールドです
@@ -227,18 +236,24 @@ python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skil
   - 対象は SKILL.md の書き方 (表紙、本文のレイアウト、見出し・段落・箇条書き・表・画像・太字・斜体など) です。
     `<style>` や HTML で決めた見た目は再現しません
   - 画像は SVG のまま埋め込むので、PowerPoint 2016 以降で開いてください
+  - 各スライドを画像にした (文字を編集できない) PPTX は作りません。以前の `--pptx-editable` は `--pptx` と同じです
   - 見本の PPTX を作り直す:
-    `python skills/marp-slides/build.py skills/marp-slides/example.md --pptx-editable -o examples/marp-slides-example.pptx`
+    `python skills/marp-slides/build.py skills/marp-slides/example.md --pptx -o examples/marp-slides-example.pptx`
 
 - Marp CLI は [`marp.zip`](skills/marp-slides/marp.zip) に入っている公式の単体版 (Windows x64 用。MIT) を
   初回に `skills/marp-slides/.bin/` に取り出して使うので、Node.js は不要です。
-  PDF / PPTX の書き出しには Edge か Chrome を使います
+  PDF の書き出しには Edge か Chrome を使います
 - zip にその OS 用が無ければ、`marp` コマンド、`npx @marp-team/marp-cli` (Node.js が必要) の順に使います
 - zip の作り直し: `python tools/build_marp_zip.py` (`--version v4.5.1` で版を指定、
   `--targets windows-x86_64,linux-x86_64` で対象を追加。取得したファイルは公開されている SHA-256 と照合します)
 - スライドと同じフォルダの `assets/` に `background.svg` (表紙の背景)・`logo.svg` (ロゴ)・
   `placeholder.svg` (画像のレイアウト用の仮の画像) が無ければ、
   既定の画像をコピーします。既にあれば上書きしないので、同じ名前のファイルを置けば差し替えられます
+- VS Code (Marp for VS Code) のプレビューでも `kit-slides` テーマを使えるように、`build.py` を実行すると
+  テーマをスライドの `assets/kit-slides.css` にコピーし、ワークスペースの `.vscode/settings.json` の
+  `markdown.marp.themes` に登録します (拡張機能はワークスペースの中のテーマしか使えないため)。
+  ワークスペースは、スライドの上のフォルダで `.vscode` があるところ、無ければ今のフォルダです。
+  `settings.json` にコメントがあって読めないときは書き換えず、追加する値を表示します
 - テーマを変えたら、見本の PDF を作り直します:
   `python skills/marp-slides/build.py skills/marp-slides/example.md -o examples/marp-slides-example.pdf`
 

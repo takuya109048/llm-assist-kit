@@ -33,6 +33,9 @@ class PSFunction:
     name: str  # PowerShell で打つ名前
     script: str  # キットのフォルダからの相対パス (Python スクリプト)
     description: str
+    args: tuple[
+        str, ...
+    ] = ()  # スクリプトに先に渡す引数 (1 つのスクリプトで複数の関数を作るとき)
 
 
 # 登録する関数。追加するときはここに足す
@@ -56,6 +59,24 @@ FUNCTIONS = [
         "init",
         "commands/init.py",
         "新しいプロジェクトに AGENTS.md・.ctxignore・.gitignore を作り git init する",
+    ),
+    PSFunction(
+        "slideinit",
+        "commands/slides.py",
+        "スライドのフォルダ (既定 slides/) に既定の画像・テーマ・VS Code の設定をそろえる",
+        ("init",),
+    ),
+    PSFunction(
+        "slidepdf",
+        "commands/slides.py",
+        "スライド (既定 slides/ の *.md) を PDF にする",
+        ("pdf",),
+    ),
+    PSFunction(
+        "slidepptx",
+        "commands/slides.py",
+        "スライド (既定 slides/ の *.md) を文字を編集できる PowerPoint にする",
+        ("pptx",),
     ),
 ]
 
@@ -81,8 +102,9 @@ def render_block(functions: list[PSFunction], python: str, kit: Path) -> str:
     for f in functions:
         script = str(kit / f.script)
         lines.append(f"# {f.name}: {f.description}")
+        fixed = "".join(f" {ps_quote(a)}" for a in f.args)
         lines.append(
-            f"function {f.name} {{ & {ps_quote(python)} {ps_quote(script)} @args }}"
+            f"function {f.name} {{ & {ps_quote(python)} {ps_quote(script)}{fixed} @args }}"
         )
     lines.append(END_MARK)
     return "\n".join(lines) + "\n"

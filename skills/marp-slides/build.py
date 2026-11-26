@@ -3,8 +3,7 @@
 使い方:
     python build.py slides.md            # slides.pdf を作る
     python build.py slides.md --html     # slides.html を作る
-    python build.py slides.md --pptx     # slides.pptx を作る (各スライドは画像)
-    python build.py slides.md --pptx-editable  # 文字を編集できる slides.pptx を作る
+    python build.py slides.md --pptx     # 文字を編集できる slides.pptx を作る
     python build.py slides.md -o out/deck.pdf
 
 - テーマ (theme.css) はこのスキルのものを使う (Markdown では `theme: kit-slides`)
@@ -14,16 +13,21 @@
 - Marp CLI は、同じフォルダの marp.zip に入っている単体版 (Node.js 不要) を
   .bin/ に取り出して使う。zip にこの OS 用が無ければ、`marp` コマンド、
   `npx @marp-team/marp-cli` (Node.js が必要) の順に探す
-- PDF / PPTX の書き出しには Chrome か Edge (Windows には標準で入っている) が必要
-- --pptx-editable は Marp CLI を使わず、editable_pptx.py (標準ライブラリだけ) で
+- PDF の書き出しには Chrome か Edge (Windows には標準で入っている) が必要
+- --pptx は Marp CLI を使わず、editable_pptx.py (標準ライブラリだけ) で
   Markdown から直接 PPTX を作る。文字・箇条書き・表を PowerPoint で編集でき、
   位置と大きさはテーマ (theme.css) の寸法に合わせる。Chrome / Edge / LibreOffice は不要
+  (各スライドを画像にした PPTX は作らない。--pptx-editable は --pptx と同じ)
+- VS Code (Marp for VS Code) のプレビューでも kit-slides テーマを使えるように、テーマを
+  スライドの assets/kit-slides.css にコピーし、ワークスペースの .vscode/settings.json の
+  markdown.marp.themes に登録する (拡張機能はワークスペースの中のテーマしか使えないため)
 """
 
 from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import platform
 import shutil
 import stat
@@ -41,14 +45,17 @@ ZIP_PATH = SKILL_DIR / "marp.zip"  # tools/build_marp_zip.py で作る
 CACHE_DIR = SKILL_DIR / ".bin"  # zip から取り出した実行ファイルの置き場 (git 管理外)
 MARP_PACKAGE = "@marp-team/marp-cli"
 FORMATS = ["pdf", "html", "pptx"]
-# 文字を編集できる PPTX (editable_pptx.py で Markdown から直接作る。Marp CLI は使わない)
-EDITABLE_PPTX = "pptx-editable"
+KIT_DIR = SKILL_DIR.parent.parent
+# Marp for VS Code のプレビュー用に、スライドの assets/ に置くテーマのコピー
+VSCODE_THEME = "kit-slides.css"
+VSCODE_THEMES_KEY = "markdown.marp.themes"
+# PPTX は editable_pptx.py で Markdown から直接作る (文字を編集できる。Marp CLI は使わない)
 EDITABLE_MODULE = SKILL_DIR / "editable_pptx.py"
 
 
-def copy_default_assets(slides: Path) -> list[Path]:
+def copy_default_assets(folder: Path) -> list[Path]:
     """スライドのフォルダの assets/ に、無い既定画像だけをコピーする"""
-    dest_dir = slides.parent / "assets"
+    dest_dir = folder / "assets"
     copied = []
     for name in ASSET_FILES:
         dest = dest_dir / name
@@ -58,6 +65,104 @@ def copy_default_assets(slides: Path) -> list[Path]:
         shutil.copyfile(DEFAULT_ASSETS / name, dest)
         copied.append(dest)
     return copied
+
+
+def copy_theme(folder: Path) -> Path | None:
+    """テーマ (theme.css) をスライドの assets/kit-slides.css にコピーする
+
+    VS Code のプレビューで kit-slides テーマを使うため。キットのテーマが変わったら
+    上書きする (内容が同じならそのまま)。コピーしたらそのパスを返す。
+    """
+    dest = folder / "assets" / VSCODE_THEME
+    data = THEME.read_bytes()
+    if dest.is_file() and dest.read_bytes() == data:
+        return None
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    return dest
+
+
+def workspace_root(folder: Path, cwd: Path) -> Path:
+    """VS Code のワークスペースのフォルダ (の見当)
+
+    スライドの上のフォルダで .vscode があるところ、無ければ今のフォルダ (VS Code の
+    ターミナルはワークスペースのフォルダで開く) にスライドがあればそこ、
+    どちらでもなければスライドのフォルダ。
+    """
+    for candidate in [folder, *folder.parents]:
+        if (candidate / ".vscode").is_dir():
+            return candidate
+    if folder.is_relative_to(cwd) and cwd != Path.home():
+        return cwd
+    return folder
+
+
+def register_vscode_theme(folder: Path, cwd: Path) -> str | None:
+    """ワークスペースの .vscode/settings.json に、テーマのコピーを登録する
+
+    Marp for VS Code は、ワークスペースの中のテーマしか使えない
+    (markdown.marp.themes にワークスペースからの相対パスを書く)。
+    登録したら、または登録できなかったら、その説明を返す (何もしなければ None)。
+    """
+    root = workspace_root(folder, cwd)
+    entry = "./" + (folder / "assets" / VSCODE_THEME).relative_to(root).as_posix()
+    settings = root / ".vscode" / "settings.json"
+    data: dict = {}
+    if settings.is_file():
+        text = settings.read_text(encoding="utf-8-sig")
+        try:
+            loaded = json.loads(text) if text.strip() else {}
+        except json.JSONDecodeError:
+            loaded = None
+        if not isinstance(loaded, dict):
+            return (
+                f"{settings} を読めなかったので (コメントなどがある)、VS Code の設定は"
+                f'変えていません。プレビューで kit-slides を使うには "{VSCODE_THEMES_KEY}"'
+                f' に "{entry}" を追加してください'
+            )
+        data = loaded
+    themes = data.get(VSCODE_THEMES_KEY, [])
+    if not isinstance(themes, list):
+        themes = [themes]
+    normalized = {str(t).removeprefix("./") for t in themes}
+    if entry.removeprefix("./") in normalized:
+        return None
+    data[VSCODE_THEMES_KEY] = [*themes, entry]
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return (
+        f"VS Code のプレビューで kit-slides テーマを使えるように登録しました: {settings}"
+        " (警告が消えないときは、VS Code のウィンドウを再読み込みしてください)"
+    )
+
+
+def setup_vscode_preview(folder: Path, cwd: Path) -> list[str]:
+    """VS Code (Marp for VS Code) のプレビューでテーマが使えるようにする
+
+    キットの中のスライド (見本など) では何もしない。
+    """
+    if folder.is_relative_to(KIT_DIR):
+        return []
+    messages = []
+    copied = copy_theme(folder)
+    if copied:
+        messages.append(f"テーマをコピーしました (VS Code のプレビュー用): {copied}")
+    registered = register_vscode_theme(folder, cwd)
+    if registered:
+        messages.append(registered)
+    return messages
+
+
+def prepare_folder(folder: Path, cwd: Path) -> list[str]:
+    """スライドのフォルダに一式 (既定の画像・テーマ・VS Code の設定) をそろえる
+
+    何度実行しても同じ (既にある画像は上書きしない)。行ったことの説明を返す。
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    messages = [f"既定の画像をコピーしました: {p}" for p in copy_default_assets(folder)]
+    return messages + setup_vscode_preview(folder, cwd)
 
 
 def platform_key() -> str:
@@ -139,6 +244,13 @@ def build_command(slides: Path, fmt: str, output: Path) -> list[str]:
     ]
 
 
+FORMAT_HELP = {
+    "pdf": "PDF で書き出す (既定)",
+    "html": "HTML で書き出す",
+    "pptx": "文字を編集できる PowerPoint (PPTX) で書き出す (Marp CLI もブラウザも不要)",
+}
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Marp のスライドを kit-slides テーマで書き出す"
@@ -151,14 +263,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             dest="format",
             action="store_const",
             const=fmt,
-            help=f"{fmt.upper()} で書き出す" + (" (既定)" if fmt == "pdf" else ""),
+            help=FORMAT_HELP[fmt],
         )
+    # 以前の名前 (--pptx と同じ)
     group.add_argument(
-        f"--{EDITABLE_PPTX}",
+        "--pptx-editable",
         dest="format",
         action="store_const",
-        const=EDITABLE_PPTX,
-        help="文字を編集できる PPTX で書き出す (Marp CLI もブラウザも不要)",
+        const="pptx",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument("-o", "--output", type=Path, help="出力ファイル")
     args = parser.parse_args(argv)
@@ -169,7 +282,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-def build_editable_pptx(slides: Path, output: Path) -> int:
+def build_pptx(slides: Path, output: Path) -> int:
     """文字を編集できる PPTX を作る (Marp CLI は使わない)"""
     for message in load_editable_pptx().convert(slides, output):
         print(f"警告: {message}", file=sys.stderr)
@@ -183,17 +296,16 @@ def main(argv: list[str] | None = None) -> int:
     if not slides.is_file():
         print(f"スライドのファイルがありません: {args.slides}", file=sys.stderr)
         return 1
-    extension = "pptx" if args.format == EDITABLE_PPTX else args.format
     output: Path = (
-        args.output.resolve() if args.output else slides.with_suffix(f".{extension}")
+        args.output.resolve() if args.output else slides.with_suffix(f".{args.format}")
     )
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    for path in copy_default_assets(slides):
-        print(f"既定の画像をコピーしました: {path}")
+    for message in prepare_folder(slides.parent, Path.cwd().resolve()):
+        print(message)
 
-    if args.format == EDITABLE_PPTX:
-        return build_editable_pptx(slides, output)
+    if args.format == "pptx":
+        return build_pptx(slides, output)
 
     try:
         command = build_command(slides, args.format, output)
