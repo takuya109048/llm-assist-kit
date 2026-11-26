@@ -38,7 +38,7 @@ from xml.etree import ElementTree
 SLIDE_W = 1280
 SLIDE_H = 720
 EMU_PER_PX = 9525  # 1px = 1/96 インチ = 9525 EMU
-HEADER_H = 52  # --kit-header-h
+HEADER_H = 68  # --kit-header-h
 FOOTER_H = 52  # --kit-footer-h
 LINE_W = 2  # --kit-line-w (ヘッダー・フッターの線の太さ)
 LINE_INSET = 24  # --kit-line-inset (線の左右の端からの距離)
