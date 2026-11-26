@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-import ctx
 import install
 
 SCRIPT = Path(__file__).resolve().parent.parent / "commands" / "init.py"
@@ -38,8 +37,9 @@ def test_creates_files_and_git(tmp_path: Path):
     code, out = run_init(tmp_path)
     assert code == 0, out
     agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
-    assert agents.startswith(ctx.DEFAULT_PROMPT)
-    assert "# プロジェクトの概要" in agents
+    for heading in ("## コマンド", "## 規約", "## 注意点", "## 回答のしかた"):
+        assert heading in agents
+    assert len(agents.splitlines()) < 60  # 短く保つ
     assert (tmp_path / ".ctxignore").is_file()
     assert ".venv/" in (tmp_path / ".gitignore").read_text(encoding="utf-8")
     assert (tmp_path / ".git").is_dir()
@@ -91,5 +91,6 @@ def test_ctx_uses_generated_files(tmp_path: Path):
     )
     out = r.stdout.decode("utf-8")
     assert r.returncode == 0
-    assert "# プロジェクトの概要" in out
+    assert "## コマンド" in out
+    assert "<!--" not in out  # 書き方メモは LLM に渡さない
     assert "a.py" in out and "secret.csv" not in out
