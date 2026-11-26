@@ -209,7 +209,8 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - 本文のレイアウトは 1 カラムのほか、`<!-- _class: ... -->` で `cols` (テキストの 2 カラム)、
   `image-right` (右に画像)、`image-left` (左に画像)、`table` (真ん中に大きな表)、
   `image` (真ん中に大きな画像)、`center` (ど真ん中に大きめのテキスト) を選べます
-- 文字の強調: `*言葉*` は赤の太字 (斜体にはしない)、`**言葉**` は黒の太字
+- 文字の色分け: Markdown の中に `<span class="red">言葉</span>` と書く (`red`・`blue`・`green`・`orange`・`gray`)。
+  Marp CLI には `--html` を付けて書き出し、VS Code のプレビューも `markdown.marp.enableHtml` を有効にする (`slideinit` が設定する)
 - フロー図・構成図などは、ユーザーが求めたとき、または図のほうが伝わると LLM が判断したときに、
   LLM が SVG ファイル (`slides/assets/<名前>.svg`) をスライドと同じパッチで作り、
   画像のレイアウト (`image` / `image-right` / `image-left`) に貼ります。大きさ・色・使える要素の決まりは

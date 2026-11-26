@@ -22,8 +22,12 @@
   --kit-text: #222;
   --kit-muted: #666;
   --kit-line: #b3b3b3;
-  /* 強調 (*文字*) の色 */
-  --kit-highlight: #d32f2f;
+  /* 文字の色分け (<span class="red"> など) の色 */
+  --kit-red: #d32f2f;
+  --kit-blue: #1f4e8c;
+  --kit-green: #2e7d32;
+  --kit-orange: #e65100;
+  --kit-gray: #757575;
   /* ヘッダー・フッターの線は同じ太さ。本文をできるだけ広くとる */
   --kit-header-h: 68px;
   --kit-footer-h: 52px;
@@ -51,12 +55,26 @@ section footer {
   font-family: var(--kit-font);
 }
 
-/* 強調 (*文字*): 斜体にはせず (日本語の斜体は読みにくい)、色と太字で目立たせる。
-   太字 (**文字**) は黒のまま */
-section em {
-  font-style: normal;
-  font-weight: 700;
-  color: var(--kit-highlight);
+/* 文字の色分け: Markdown の中に <span class="red">文字</span> のように書く
+   (太字にするときは **<span class="red">文字</span>**) */
+section .red {
+  color: var(--kit-red);
+}
+
+section .blue {
+  color: var(--kit-blue);
+}
+
+section .green {
+  color: var(--kit-green);
+}
+
+section .orange {
+  color: var(--kit-orange);
+}
+
+section .gray {
+  color: var(--kit-gray);
 }
 
 /* 見出しの文字も本文と同じ黒 (default テーマの色付きの見出しを上書き) */

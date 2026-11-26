@@ -55,7 +55,10 @@ def test_slideinit_prepares_the_folder(tmp_path: Path):
     # 仮の画像 (placeholder.svg) はコピーしない
     assert names == ["background.png", "kit-slides.css", "logo.png"]
     settings = json.loads((tmp_path / ".vscode" / "settings.json").read_text("utf-8"))
-    assert settings == {"markdown.marp.themes": ["./slides/assets/kit-slides.css"]}
+    assert settings == {
+        "markdown.marp.themes": ["./slides/assets/kit-slides.css"],
+        "markdown.marp.enableHtml": True,
+    }
 
     # 2 回目は何も変えない (差し替えた画像も残る)
     (assets / "logo.png").write_text("mine", encoding="utf-8")

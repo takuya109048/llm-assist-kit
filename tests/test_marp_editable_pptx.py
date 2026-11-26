@@ -283,19 +283,47 @@ def test_image_layout_places_the_svg_figure():
     assert (round(pic.x, 1), round(pic.y, 1), pic.w, pic.h) == (90.0, 152.8, 1100, 440)
 
 
-def test_emphasis_is_red_bold_not_italic():
-    """*文字* は斜体にせず、赤の太字にする (theme.css の section em)"""
-    [slide] = slides_of("## A\n\n- 回答までに*平均 2 日*かかる\n")
+@pytest.mark.parametrize(
+    ("text", "color"),
+    [
+        ('<span class="red">平均 2 日</span>', "D32F2F"),
+        ('<span class="blue">平均 2 日</span>', "1F4E8C"),
+        ("<span class='big green'>平均 2 日</span>", "2E7D32"),
+        ('<span style="color: #f60">平均 2 日</span>', "FF6600"),
+        ('<span style="color:rgb(10, 20, 30)">平均 2 日</span>', "0A141E"),
+        ('<span style="font-weight: bold; color: purple">平均 2 日</span>', "800080"),
+        ("<span>平均 2 日</span>", None),
+    ],
+)
+def test_span_colors(text: str, color: str | None):
+    """<span class="red"> や style="color: ..." で文字の色を変える"""
+    [run] = ep.parse_inline(text)
+    assert (run.text, run.color) == ("平均 2 日", color)
+
+
+def test_span_color_in_pptx_and_nested_markdown():
+    [slide] = slides_of(
+        '## A\n\n- 回答まで**<span class="red">平均 2 日</span>**、*斜体*\n'
+    )
     page = ep.Layout(Path("."), []).slide(slide, 1, 1)
-    writer = ep.SlideWriter(ep.Package())
-    xml = writer.xml(page)
+    xml = ep.SlideWriter(ep.Package()).xml(page)
     run = re.search(r"<a:r><a:rPr ([^>]*)>(.*?)</a:rPr><a:t>平均 2 日</a:t>", xml)
     assert run
-    assert 'b="1"' in run.group(1) and 'i="1"' not in run.group(1)
-    assert f'<a:srgbClr val="{ep.HIGHLIGHT}"/>' in run.group(2)
-    css = (SKILL / "theme.css").read_text(encoding="utf-8")
-    assert f"--kit-highlight: #{ep.HIGHLIGHT.lower()};" in css
-    assert "font-style: normal;" in css
+    assert 'b="1"' in run.group(1)
+    assert '<a:srgbClr val="D32F2F"/>' in run.group(2)
+    italic = re.search(r"<a:r><a:rPr ([^>]*)>(?:(?!<a:r>).)*?<a:t>斜体</a:t>", xml)
+    assert italic and 'i="1"' in italic.group(1)  # *強調* は斜体のまま (色は付けない)
+
+
+def test_simple_html_tags():
+    runs = ep.parse_inline("<b>太</b><u>下</u><i>斜</i><s>消</s><div>中</div>")
+    assert [(r.text, r.bold, r.underline, r.italic, r.strike) for r in runs] == [
+        ("太", True, False, False, False),
+        ("下", False, True, False, False),
+        ("斜", False, False, True, False),
+        ("消", False, False, False, True),
+        ("中", False, False, False, False),  # そのほかのタグは表示しない
+    ]
 
 
 def test_center_layout_is_one_box_centered_vertically():
@@ -435,8 +463,9 @@ def test_special_characters_are_escaped(tmp_path: Path):
     with zipfile.ZipFile(tmp_path / "s.pptx") as zf:
         xml = zf.read("ppt/slides/slide1.xml").decode("utf-8")
     ElementTree.fromstring(xml)
-    # HTML のタグは (<br> 以外) Marp と同じく文字のまま表示する
-    assert "<a:t>A &amp; B &lt;c&gt; &quot;d&quot;</a:t>" in xml
+    # 知らない HTML のタグは、Marp (--html) と同じく表示しない
+    assert "<a:t>A &amp; B </a:t>" in xml and "<a:t> &quot;d&quot;</a:t>" in xml
+    assert "&lt;c&gt;" not in xml
     assert "<a:t>1 &lt; 2 &amp; 3</a:t>" in xml
 
 
