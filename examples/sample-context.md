@@ -336,6 +336,9 @@ python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skil
   1 文字ほど違うことがあると伝えてください。画像は SVG のまま入るので、PowerPoint 2016 以降で開くよう伝えてください。
 - スライドと同じフォルダの `assets/` に `background.svg`・`logo.svg`・`placeholder.svg` が無ければ、既定の画像がコピーされます。
   既にあるファイルは上書きされないので、同じ名前の画像を置けば差し替えられます。
+- VS Code のプレビューでも同じ見た目になるように、テーマを `assets/kit-slides.css` にコピーし、
+  ワークスペースの `.vscode/settings.json` に登録します (`theme: kit-slides` の警告が消えます。
+  消えないときは VS Code のウィンドウの再読み込みを案内してください)。
 - Marp CLI は同梱の `marp.zip` の単体版を使うので、Node.js は不要です (Windows)。
   PDF の書き出しには Edge か Chrome を使います。
   「Marp CLI が見つかりません」と表示されたら (zip にその OS 用が無い場合)、Node.js のインストールを案内してください。

@@ -18,12 +18,16 @@
   Markdown から直接 PPTX を作る。文字・箇条書き・表を PowerPoint で編集でき、
   位置と大きさはテーマ (theme.css) の寸法に合わせる。Chrome / Edge / LibreOffice は不要
   (各スライドを画像にした PPTX は作らない。--pptx-editable は --pptx と同じ)
+- VS Code (Marp for VS Code) のプレビューでも kit-slides テーマを使えるように、テーマを
+  スライドの assets/kit-slides.css にコピーし、ワークスペースの .vscode/settings.json の
+  markdown.marp.themes に登録する (拡張機能はワークスペースの中のテーマしか使えないため)
 """
 
 from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import platform
 import shutil
 import stat
@@ -41,6 +45,10 @@ ZIP_PATH = SKILL_DIR / "marp.zip"  # tools/build_marp_zip.py で作る
 CACHE_DIR = SKILL_DIR / ".bin"  # zip から取り出した実行ファイルの置き場 (git 管理外)
 MARP_PACKAGE = "@marp-team/marp-cli"
 FORMATS = ["pdf", "html", "pptx"]
+KIT_DIR = SKILL_DIR.parent.parent
+# Marp for VS Code のプレビュー用に、スライドの assets/ に置くテーマのコピー
+VSCODE_THEME = "kit-slides.css"
+VSCODE_THEMES_KEY = "markdown.marp.themes"
 # PPTX は editable_pptx.py で Markdown から直接作る (文字を編集できる。Marp CLI は使わない)
 EDITABLE_MODULE = SKILL_DIR / "editable_pptx.py"
 
@@ -57,6 +65,97 @@ def copy_default_assets(slides: Path) -> list[Path]:
         shutil.copyfile(DEFAULT_ASSETS / name, dest)
         copied.append(dest)
     return copied
+
+
+def copy_theme(slides: Path) -> Path | None:
+    """テーマ (theme.css) をスライドの assets/kit-slides.css にコピーする
+
+    VS Code のプレビューで kit-slides テーマを使うため。キットのテーマが変わったら
+    上書きする (内容が同じならそのまま)。コピーしたらそのパスを返す。
+    """
+    dest = slides.parent / "assets" / VSCODE_THEME
+    data = THEME.read_bytes()
+    if dest.is_file() and dest.read_bytes() == data:
+        return None
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    return dest
+
+
+def workspace_root(slides: Path, cwd: Path) -> Path:
+    """VS Code のワークスペースのフォルダ (の見当)
+
+    スライドの上のフォルダで .vscode があるところ、無ければ今のフォルダ (VS Code の
+    ターミナルはワークスペースのフォルダで開く) にスライドがあればそこ、
+    どちらでもなければスライドのフォルダ。
+    """
+    folder = slides.parent
+    for candidate in [folder, *folder.parents]:
+        if (candidate / ".vscode").is_dir():
+            return candidate
+    if slides.is_relative_to(cwd) and cwd != Path.home():
+        return cwd
+    return folder
+
+
+def register_vscode_theme(slides: Path, cwd: Path) -> str | None:
+    """ワークスペースの .vscode/settings.json に、テーマのコピーを登録する
+
+    Marp for VS Code は、ワークスペースの中のテーマしか使えない
+    (markdown.marp.themes にワークスペースからの相対パスを書く)。
+    登録したら、または登録できなかったら、その説明を返す (何もしなければ None)。
+    """
+    root = workspace_root(slides, cwd)
+    entry = (
+        "./" + (slides.parent / "assets" / VSCODE_THEME).relative_to(root).as_posix()
+    )
+    settings = root / ".vscode" / "settings.json"
+    data: dict = {}
+    if settings.is_file():
+        text = settings.read_text(encoding="utf-8-sig")
+        try:
+            loaded = json.loads(text) if text.strip() else {}
+        except json.JSONDecodeError:
+            loaded = None
+        if not isinstance(loaded, dict):
+            return (
+                f"{settings} を読めなかったので (コメントなどがある)、VS Code の設定は"
+                f'変えていません。プレビューで kit-slides を使うには "{VSCODE_THEMES_KEY}"'
+                f' に "{entry}" を追加してください'
+            )
+        data = loaded
+    themes = data.get(VSCODE_THEMES_KEY, [])
+    if not isinstance(themes, list):
+        themes = [themes]
+    normalized = {str(t).removeprefix("./") for t in themes}
+    if entry.removeprefix("./") in normalized:
+        return None
+    data[VSCODE_THEMES_KEY] = [*themes, entry]
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return (
+        f"VS Code のプレビューで kit-slides テーマを使えるように登録しました: {settings}"
+        " (警告が消えないときは、VS Code のウィンドウを再読み込みしてください)"
+    )
+
+
+def setup_vscode_preview(slides: Path, cwd: Path) -> list[str]:
+    """VS Code (Marp for VS Code) のプレビューでテーマが使えるようにする
+
+    キットの中のスライド (見本など) では何もしない。
+    """
+    if slides.is_relative_to(KIT_DIR):
+        return []
+    messages = []
+    copied = copy_theme(slides)
+    if copied:
+        messages.append(f"テーマをコピーしました (VS Code のプレビュー用): {copied}")
+    registered = register_vscode_theme(slides, cwd)
+    if registered:
+        messages.append(registered)
+    return messages
 
 
 def platform_key() -> str:
@@ -197,6 +296,8 @@ def main(argv: list[str] | None = None) -> int:
 
     for path in copy_default_assets(slides):
         print(f"既定の画像をコピーしました: {path}")
+    for message in setup_vscode_preview(slides, Path.cwd().resolve()):
+        print(message)
 
     if args.format == "pptx":
         return build_pptx(slides, output)

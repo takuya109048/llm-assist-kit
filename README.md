@@ -239,6 +239,11 @@ python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skil
 - スライドと同じフォルダの `assets/` に `background.svg` (表紙の背景)・`logo.svg` (ロゴ)・
   `placeholder.svg` (画像のレイアウト用の仮の画像) が無ければ、
   既定の画像をコピーします。既にあれば上書きしないので、同じ名前のファイルを置けば差し替えられます
+- VS Code (Marp for VS Code) のプレビューでも `kit-slides` テーマを使えるように、`build.py` を実行すると
+  テーマをスライドの `assets/kit-slides.css` にコピーし、ワークスペースの `.vscode/settings.json` の
+  `markdown.marp.themes` に登録します (拡張機能はワークスペースの中のテーマしか使えないため)。
+  ワークスペースは、スライドの上のフォルダで `.vscode` があるところ、無ければ今のフォルダです。
+  `settings.json` にコメントがあって読めないときは書き換えず、追加する値を表示します
 - テーマを変えたら、見本の PDF を作り直します:
   `python skills/marp-slides/build.py skills/marp-slides/example.md -o examples/marp-slides-example.pdf`
 
