@@ -495,6 +495,43 @@ def span_color(attrs: str) -> str | None:
     return None
 
 
+def delimiter_of(g: dict[str, str | None]) -> str | None:
+    """強調・太字・取り消し線の記号 (* ** ~~)。_ は前後が英数字かを正規表現で見ている"""
+    if g["bold"] and g["boldtext"] is not None:
+        return "**"
+    if g["strike"]:
+        return "~~"
+    if g["em"] and g["emtext"] is not None:
+        return "*"
+    return None
+
+
+def is_punct(ch: str) -> bool:
+    """CommonMark (markdown-it) の「句読点・記号」(ASCII の記号と Unicode の P・S)"""
+    return (
+        ch.isascii()
+        and not ch.isalnum()
+        and not ch.isspace()
+        or (unicodedata.category(ch)[0] in "PS")
+    )
+
+
+def delimiters_flank(text: str, start: int, end: int, n: int) -> bool:
+    """開く記号 (start から n 文字) と閉じる記号 (end の手前 n 文字) が、CommonMark の
+    left-flanking / right-flanking の決まりを満たすか (満たさないと強調にならない)"""
+    before = text[start - 1] if start > 0 else " "
+    after_open = text[start + n] if start + n < len(text) else " "
+    before_close = text[end - n - 1] if end - n - 1 >= 0 else " "
+    after = text[end] if end < len(text) else " "
+    left = not after_open.isspace() and (
+        not is_punct(after_open) or before.isspace() or is_punct(before)
+    )
+    right = not before_close.isspace() and (
+        not is_punct(before_close) or after.isspace() or is_punct(after)
+    )
+    return left and right
+
+
 def parse_inline(text: str, base: Run | None = None) -> list[Run]:
     """行の中の書式 (太字・斜体・コード・リンク・色・改行) を Run の並びにする"""
     base = base or Run("")
@@ -510,10 +547,20 @@ def parse_inline(text: str, base: Run | None = None) -> list[Run]:
         runs.extend(parse_inline(s, sub))
 
     pos = 0
-    for m in INLINE_RE.finditer(text):
-        add(unescape(text[pos : m.start()]))
-        pos = m.end()
+    search_from = 0
+    while m := INLINE_RE.search(text, search_from):
         g = m.groupdict()
+        delim = delimiter_of(g)
+        if delim and not delimiters_flank(text, m.start(), m.end(), len(delim)):
+            # Marp (markdown-it) と同じく、前後の文字によっては * ** ~~ を強調に
+            # しない (例: 日本語の直後の **<span>...</span>**)。開く記号を文字のまま
+            # 残し、その次から探し直す (記号の連なりは 1 つとして扱う)
+            search_from = m.start() + len(delim)
+            while search_from < len(text) and text[search_from] == delim[0]:
+                search_from += 1
+            continue
+        add(unescape(text[pos : m.start()]))
+        pos = search_from = m.end()
         if g["esc"]:
             add(g["escch"])
         elif g["code"]:

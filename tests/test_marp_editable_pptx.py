@@ -303,7 +303,7 @@ def test_span_colors(text: str, color: str | None):
 
 def test_span_color_in_pptx_and_nested_markdown():
     [slide] = slides_of(
-        '## A\n\n- 回答まで**<span class="red">平均 2 日</span>**、*斜体*\n'
+        '## A\n\n- 回答まで<span class="red">**平均 2 日**</span>、*斜体*\n'
     )
     page = ep.Layout(Path("."), []).slide(slide, 1, 1)
     xml = ep.SlideWriter(ep.Package()).xml(page)
@@ -527,3 +527,33 @@ def test_headings_are_black():
             if isinstance(shape, ep.TextBox):
                 for p in shape.paras:
                     assert p.color in (ep.TEXT, ep.MUTED), (shape.name, p.color)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Marp (markdown-it) で確かめた結果と同じにする
+        (
+            '回答まで**<span class="red">平均</span>**かかる',
+            [("回答まで**", False), ("平均", False), ("**かかる", False)],
+        ),
+        (
+            '回答まで<span class="red">**平均**</span>かかる',
+            [("回答まで", False), ("平均", True), ("かかる", False)],
+        ),
+        ("「**重要**」です", [("「", False), ("重要", True), ("」です", False)]),
+        ("**重要。**です", [("**重要。**です", False)]),
+        ("a * b * c", [("a * b * c", False)]),
+        ("これは**太字**です", [("これは", False), ("太字", True), ("です", False)]),
+    ],
+)
+def test_emphasis_follows_markdown_flanking_rules(text: str, expected: list):
+    """** や * は、前後の文字によっては太字・斜体にならない (Marp と同じ)"""
+    runs = ep.parse_inline(text)
+    assert [(r.text, r.bold) for r in runs] == expected
+
+
+def test_skill_puts_bold_inside_span():
+    text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    assert '<span class="red">**言葉**</span>' in text
+    assert "外側に書くと" in text
