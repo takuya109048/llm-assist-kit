@@ -64,7 +64,7 @@ python install.py
 | `addcommit` | `git add -A` と `git commit -m` をまとめて行う。`addcommit メッセージ` (空白で区切った語はつなげて 1 つのメッセージにする) |
 | `reset` | `git reset --hard HEAD` と `git clean -fd` をまとめて行い、最後のコミットの状態に戻す。消える内容を表示して確認してから実行 (`reset -y` で確認なし)。`.gitignore` で無視しているファイルは残る |
 | `init` | 新しいプロジェクトのフォルダで実行すると、`AGENTS.md` (冒頭プロンプトのひな形)・`.ctxignore`・`.gitignore` を作り、`git init` する。すでにあるファイルは上書きしない。`init <フォルダ>` でフォルダを指定 (無ければ作る)、`init --no-git` で git init を省く。Box・OneDrive などで git が「dubious ownership」と言うフォルダは、git の `safe.directory` に登録して使えるようにする |
-| `slideinit` | スライドのフォルダ (既定 `slides/`、`slideinit <フォルダ>` で指定) に、既定の画像 (`assets/background.svg`・`logo.svg`・`placeholder.svg`)・テーマ (`assets/kit-slides.css`)・VS Code のプレビュー用の設定 (`.vscode/settings.json`) をそろえる。何度実行しても同じで、既にある画像は上書きしない。marp-slides スキルは、スライドを新しく作るパッチの前にこれを入れる |
+| `slideinit` | スライドのフォルダ (既定 `slides/`、`slideinit <フォルダ>` で指定) に、既定の画像 (表紙の背景 `assets/background.png`・ロゴ `assets/logo.png`)・テーマ (`assets/kit-slides.css`)・VS Code のプレビュー用の設定 (`.vscode/settings.json`) をそろえる。何度実行しても同じで、既にある画像は上書きしない。marp-slides スキルは、スライドを新しく作るパッチの前にこれを入れる |
 | `slidepdf` | スライドを PDF にする。`slidepdf slides/発表.md` (省くと `slides/` の `*.md` をすべて) |
 | `slidepptx` | スライドを文字を編集できる PowerPoint (PPTX) にする。使い方は `slidepdf` と同じ |
 
@@ -246,9 +246,9 @@ slidepptx slides/発表.md       # 文字を編集できる PowerPoint
 - zip にその OS 用が無ければ、`marp` コマンド、`npx @marp-team/marp-cli` (Node.js が必要) の順に使います
 - zip の作り直し: `python tools/build_marp_zip.py` (`--version v4.5.1` で版を指定、
   `--targets windows-x86_64,linux-x86_64` で対象を追加。取得したファイルは公開されている SHA-256 と照合します)
-- スライドと同じフォルダの `assets/` に `background.svg` (表紙の背景)・`logo.svg` (ロゴ)・
-  `placeholder.svg` (画像のレイアウト用の仮の画像) が無ければ、
-  既定の画像をコピーします。既にあれば上書きしないので、同じ名前のファイルを置けば差し替えられます
+- スライドと同じフォルダの `assets/` に `background.png` (表紙の背景)・`logo.png` (ロゴ) が無ければ、
+  既定の画像をコピーします。`placeholder.svg` (画像のレイアウト用の仮の画像) は、スライドが使っているときだけ
+  書き出しのときにコピーします。既にあれば上書きしないので、同じ名前のファイルを置けば差し替えられます
 - VS Code (Marp for VS Code) のプレビューでも `kit-slides` テーマを使えるように、`build.py` を実行すると
   テーマをスライドの `assets/kit-slides.css` にコピーし、ワークスペースの `.vscode/settings.json` の
   `markdown.marp.themes` に登録します (拡張機能はワークスペースの中のテーマしか使えないため)。

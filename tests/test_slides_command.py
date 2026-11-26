@@ -52,16 +52,17 @@ def test_slideinit_prepares_the_folder(tmp_path: Path):
     assert code == 0, out
     assets = tmp_path / "slides" / "assets"
     names = sorted(p.name for p in assets.iterdir())
-    assert names == ["background.svg", "kit-slides.css", "logo.svg", "placeholder.svg"]
+    # 仮の画像 (placeholder.svg) はコピーしない
+    assert names == ["background.png", "kit-slides.css", "logo.png"]
     settings = json.loads((tmp_path / ".vscode" / "settings.json").read_text("utf-8"))
     assert settings == {"markdown.marp.themes": ["./slides/assets/kit-slides.css"]}
 
     # 2 回目は何も変えない (差し替えた画像も残る)
-    (assets / "logo.svg").write_text("mine", encoding="utf-8")
+    (assets / "logo.png").write_text("mine", encoding="utf-8")
     code, out = run(tmp_path, "init")
     assert code == 0, out
     assert "コピーしました" not in out
-    assert (assets / "logo.svg").read_text(encoding="utf-8") == "mine"
+    assert (assets / "logo.png").read_text(encoding="utf-8") == "mine"
 
 
 def test_slideinit_with_folder(tmp_path: Path):
