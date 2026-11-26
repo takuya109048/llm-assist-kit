@@ -37,7 +37,7 @@ def test_creates_files_and_git(tmp_path: Path):
     code, out = run_init(tmp_path)
     assert code == 0, out
     agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
-    for heading in ("## コマンド", "## 規約", "## 注意点", "## 回答のしかた"):
+    for heading in ("## コマンド", "## 進め方", "## 境界", "## 回答"):
         assert heading in agents
     assert len(agents.splitlines()) < 60  # 短く保つ
     assert (tmp_path / ".ctxignore").is_file()
