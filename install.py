@@ -52,6 +52,11 @@ FUNCTIONS = [
         "commands/reset.py",
         "git reset --hard HEAD と git clean -fd をまとめて行う (確認あり。reset -y で確認なし)",
     ),
+    PSFunction(
+        "init",
+        "commands/init.py",
+        "新しいプロジェクトに AGENTS.md・.ctxignore・.gitignore を作り git init する",
+    ),
 ]
 
 BEGIN_MARK = "# >>> llm-assist-kit >>>"

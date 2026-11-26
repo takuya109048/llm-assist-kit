@@ -63,6 +63,7 @@ python install.py
 | `ctx` | プロジェクトのコンテキストをクリップボードへ。`ctx run -- <コマンド>` で実行結果をコピー |
 | `addcommit` | `git add -A` と `git commit -m` をまとめて行う。`addcommit メッセージ` (空白で区切った語はつなげて 1 つのメッセージにする) |
 | `reset` | `git reset --hard HEAD` と `git clean -fd` をまとめて行い、最後のコミットの状態に戻す。消える内容を表示して確認してから実行 (`reset -y` で確認なし)。`.gitignore` で無視しているファイルは残る |
+| `init` | 新しいプロジェクトのフォルダで実行すると、`AGENTS.md` (冒頭プロンプトのひな形)・`.ctxignore`・`.gitignore` を作り、`git init` する。すでにあるファイルは上書きしない。`init <フォルダ>` でフォルダを指定 (無ければ作る)、`init --no-git` で git init を省く |
 
 ### 使い方 (PowerShell、プロジェクトのフォルダで)
 
@@ -109,6 +110,7 @@ ctx C:\work\other     # 別のフォルダを対象にする
 
 ルート直下の `AGENTS.md` → `.ctxprompt.md` → `.ctxprompt` の順に探し、無ければ内蔵の日本語プロンプトを使います。
 プロジェクトの概要・コーディング規約・回答形式などを書いておくと、CLAUDE.md と同じ感覚で使えます。
+新しいプロジェクトでは `init` を実行すると、内蔵プロンプトをもとにした `AGENTS.md` のひな形が作られます。
 
 ### スキル
 
