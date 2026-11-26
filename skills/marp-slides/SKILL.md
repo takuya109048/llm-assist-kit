@@ -164,9 +164,11 @@ python ${CTX} run -- python ${SKILL_DIR}/build.py "<スライドのパス>"
 
 - HTML にするときは末尾に `--html`、PowerPoint にするときは `--pptx` を付けます。
   `--pptx` は各スライドが画像になり、PowerPoint で文字を直せません。
-- PowerPoint で文字を直したいと言われたら `--pptx-editable` を付けます (LibreOffice が必要)。
-  試験的な機能で、箇条書きや表は行ごとのテキストボックスになり、見た目が少し崩れることがあると伝えてください
-  (PowerPoint の表や箇条書きとしては編集できず、行ごとの文字を直す形になります)。
+- PowerPoint で文字を直したいと言われたら `--pptx-editable` を付けます。文字・箇条書き・番号・表が
+  PowerPoint のテキストや表として編集でき、位置はテーマと同じになります (Python だけで作るので、
+  Marp CLI・ブラウザ・ほかのソフトは不要)。この書き方 (上の決まり) から外れた Markdown や HTML は
+  再現されません。文字の折り返し位置が PDF と 1 文字ほど違うことがあると伝えてください。
+  画像は SVG のまま入るので、PowerPoint 2016 以降で開くよう伝えてください。
 - スライドと同じフォルダの `assets/` に `background.svg`・`logo.svg`・`placeholder.svg` が無ければ、既定の画像がコピーされます。
   既にあるファイルは上書きされないので、同じ名前の画像を置けば差し替えられます。
 - Marp CLI は同梱の `marp.zip` の単体版を使うので、Node.js は不要です (Windows)。

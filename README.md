@@ -28,7 +28,7 @@ C:\tools\llm-assist-kit\      ← キット (例)
 ├── ctx.py
 └── skills\                    ← スキル (どのプロジェクトでも使う)
     ├── apply-patch\SKILL.md, apply.py, apply_patch.zip
-    └── marp-slides\SKILL.md, build.py, theme.css, marp.zip, assets\
+    └── marp-slides\SKILL.md, build.py, editable_pptx.py, theme.css, marp.zip, assets\
 
 my-project\                    ← 対象プロジェクト
 ├── AGENTS.md                  ← (任意) 冒頭プロンプト
@@ -207,7 +207,8 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - 見た目はテーマ [`theme.css`](skills/marp-slides/theme.css) (`theme: kit-slides`) で決めます。
   フォントは半角英数が Segoe UI、全角 (日本語) がメイリオです
 - 全パターンを使った見本: [`example.md`](skills/marp-slides/example.md) (11 枚) と、
-  それを書き出した [`examples/marp-slides-example.pdf`](examples/marp-slides-example.pdf)
+  それを書き出した [`examples/marp-slides-example.pdf`](examples/marp-slides-example.pdf)、
+  文字を編集できる PowerPoint [`examples/marp-slides-example.pptx`](examples/marp-slides-example.pptx)
 
 ```powershell
 python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md          # PDF
@@ -215,12 +216,19 @@ python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skil
 python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md --pptx-editable  # 文字を編集できる PowerPoint
 ```
 
-- `--pptx-editable` は Marp CLI の試験的な機能で、LibreOffice が必要です。文字は編集できますが、
-  箇条書きや表は行ごとのテキストボックスになり、見た目が少し崩れることがあります。
-  英数字と日本語でフォントが変わると LibreOffice がその切れ目で文字の箱を分けてしまうので、
-  書き出しはメイリオ 1 種類のテーマ ([`theme-editable.css`](skills/marp-slides/theme-editable.css)) で行い、
-  その後 PPTX の中で「半角英数は Segoe UI、日本語はメイリオ」を指定し直します。
-  PDF から読み取るときに別の文字になったもの (「⽉」(康煕部首) や縦書き用の「︓」など) も元の文字に戻します
+- `--pptx-editable` は Marp CLI を使わず、[`editable_pptx.py`](skills/marp-slides/editable_pptx.py)
+  (標準ライブラリだけ) が Markdown から直接 PPTX を作ります。Chrome / Edge / LibreOffice も不要です。
+  - 文字は PowerPoint の段落、箇条書きと番号付きリストは PowerPoint の箇条書き、表は PowerPoint の表、
+    画像・線・ロゴは個別の図形になり、そのまま編集できます。ページ番号はスライド番号のフィールドです
+  - 位置と大きさは `theme.css` (と Marp の default テーマ) の寸法をそのまま写します (1px = 1/96 インチ)。
+    行の高さは固定値、箱の内側の余白は 0 にして、ブラウザと同じ位置に行が並ぶようにしています。
+    見本の各段落・表・画像の位置は、Chromium で描いた Marp の HTML と一致することをテストで確かめています
+  - 文字の折り返しと表の列幅だけは文字の幅を見積もって決めるので、PDF と 1 文字ほど違うことがあります
+  - 対象は SKILL.md の書き方 (表紙、本文のレイアウト、見出し・段落・箇条書き・表・画像・太字・斜体など) です。
+    `<style>` や HTML で決めた見た目は再現しません
+  - 画像は SVG のまま埋め込むので、PowerPoint 2016 以降で開いてください
+  - 見本の PPTX を作り直す:
+    `python skills/marp-slides/build.py skills/marp-slides/example.md --pptx-editable -o examples/marp-slides-example.pptx`
 
 - Marp CLI は [`marp.zip`](skills/marp-slides/marp.zip) に入っている公式の単体版 (Windows x64 用。MIT) を
   初回に `skills/marp-slides/.bin/` に取り出して使うので、Node.js は不要です。

@@ -113,9 +113,7 @@ section table {
   font-size: 22px;
 }
 
-/* セルの左右の余白を広めにとる。編集できる PPTX (--pptx-editable) は PDF から
-   作り直すため、隣のセルの文字との間が狭いと 1 つのテキストボックスにまとめられて
-   列からはみ出す */
+/* セルの左右の余白を広めにとる (編集できる PPTX の editable_pptx.py も同じ値を使う) */
 section table tr th,
 section table tr td {
   padding: 8px 32px;
