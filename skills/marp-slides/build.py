@@ -54,6 +54,8 @@ KIT_DIR = SKILL_DIR.parent.parent
 # Marp for VS Code のプレビュー用に、スライドの assets/ に置くテーマのコピー
 VSCODE_THEME = "kit-slides.css"
 VSCODE_THEMES_KEY = "markdown.marp.themes"
+# 文字の色分け (<span class="red"> など) のために、プレビューでも HTML を使えるようにする
+VSCODE_HTML_KEY = "markdown.marp.enableHtml"
 # PPTX は editable_pptx.py で Markdown から直接作る (文字を編集できる。Marp CLI は使わない)
 EDITABLE_MODULE = SKILL_DIR / "editable_pptx.py"
 
@@ -123,16 +125,19 @@ def register_vscode_theme(folder: Path, cwd: Path) -> str | None:
             return (
                 f"{settings} を読めなかったので (コメントなどがある)、VS Code の設定は"
                 f'変えていません。プレビューで kit-slides を使うには "{VSCODE_THEMES_KEY}"'
-                f' に "{entry}" を追加してください'
+                f' に "{entry}" を追加し、"{VSCODE_HTML_KEY}": true を書いてください'
             )
         data = loaded
     themes = data.get(VSCODE_THEMES_KEY, [])
     if not isinstance(themes, list):
         themes = [themes]
     normalized = {str(t).removeprefix("./") for t in themes}
-    if entry.removeprefix("./") in normalized:
+    registered = entry.removeprefix("./") in normalized
+    if registered and data.get(VSCODE_HTML_KEY) is True:
         return None
-    data[VSCODE_THEMES_KEY] = [*themes, entry]
+    if not registered:
+        data[VSCODE_THEMES_KEY] = [*themes, entry]
+    data[VSCODE_HTML_KEY] = True
     settings.parent.mkdir(parents=True, exist_ok=True)
     settings.write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -249,7 +254,10 @@ def build_command(slides: Path, fmt: str, output: Path) -> list[str]:
         "--theme-set",
         str(THEME),
         "--allow-local-files",
-        f"--{fmt}",
+        # Markdown の中の HTML (文字の色分けの <span class="red"> など) を使えるようにする。
+        # HTML で書き出すときは、-o の拡張子 (.html) で決まる
+        "--html",
+        *(["--pdf"] if fmt == "pdf" else []),
         "-o",
         str(output),
     ]

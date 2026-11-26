@@ -27,7 +27,7 @@ import sys
 import unicodedata
 import zipfile
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from html import unescape
 from pathlib import Path
@@ -61,7 +61,6 @@ PAGE_NUMBER_SIZE = 24  # ページ番号 (section::after) の文字の大きさ
 
 ACCENT = "1F4E8C"  # --kit-accent
 LINE = "B3B3B3"  # --kit-line (ヘッダー・フッターの線)
-HIGHLIGHT = "D32F2F"  # --kit-highlight (強調 *文字* の色。斜体にせず太字にする)
 TEXT = "222222"  # --kit-text
 MUTED = "666666"  # --kit-muted
 WHITE = "FFFFFF"
@@ -97,6 +96,8 @@ class Run:
     code: bool = False
     strike: bool = False
     link: str | None = None
+    color: str | None = None  # 文字の色 (<span class="red"> など)。None なら段落の色
+    underline: bool = False
 
 
 @dataclass
@@ -437,39 +438,75 @@ INLINE_RE = re.compile(
     r"|(?P<strike>~~(?P<striketext>.+?)~~)"
     r"|(?P<em>\*(?P<emtext>[^*\s](?:.*?[^*\s])?)\*"
     r"|(?<![0-9A-Za-z])_(?P<emtext2>[^_\s](?:.*?[^_\s])?)_(?![0-9A-Za-z]))"
+    r"|(?P<span><span(?P<spanattrs>(?:\s[^>]*)?)>(?P<spantext>.*?)</span\s*>)"
+    r"|(?P<htag><(?P<htagname>b|strong|i|em|u|s|del)>(?P<htagtext>.*?)</(?P=htagname)\s*>)"
     r"|(?P<br><br\s*/?>)"
+    r"|(?P<tag></?[A-Za-z][^>]*>)"
     r"|(?P<nl>[ \t]*\n[ \t]*)",
     re.S,
 )
 
 
+# 文字の色分け (<span class="red">) の色。theme.css の --kit-red などと同じ
+SPAN_COLORS = {
+    "red": "D32F2F",
+    "blue": "1F4E8C",
+    "green": "2E7D32",
+    "orange": "E65100",
+    "gray": "757575",
+    "grey": "757575",
+}
+# style="color: ..." で使える色の名前 (よく使うものだけ)
+NAMED_COLORS = {
+    **SPAN_COLORS,
+    "black": "000000",
+    "white": "FFFFFF",
+    "purple": "800080",
+    "yellow": "FFFF00",
+    "navy": "000080",
+    "darkred": "8B0000",
+}
+CLASS_ATTR_RE = re.compile(r"""\bclass\s*=\s*["']([^"']*)["']""", re.I)
+STYLE_COLOR_RE = re.compile(r"""(?:^|[;"'\s])color\s*:\s*([^;"']+)""", re.I)
+
+
+def parse_color(value: str) -> str | None:
+    """CSS の色 (#rgb・#rrggbb・rgb(r, g, b)・名前) を RRGGBB にする"""
+    value = value.strip().lower()
+    if m := re.fullmatch(r"#([0-9a-f]{3})", value):
+        return "".join(c * 2 for c in m.group(1)).upper()
+    if m := re.fullmatch(r"#([0-9a-f]{6})", value):
+        return m.group(1).upper()
+    if m := re.fullmatch(r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)[^)]*\)", value):
+        return "".join(f"{min(int(v), 255):02X}" for v in m.groups())
+    return NAMED_COLORS.get(value)
+
+
+def span_color(attrs: str) -> str | None:
+    """<span> の属性から文字の色を取り出す (style の color が class より優先)"""
+    if m := STYLE_COLOR_RE.search(attrs):
+        color = parse_color(m.group(1))
+        if color:
+            return color
+    if m := CLASS_ATTR_RE.search(attrs):
+        for name in m.group(1).split():
+            if name.lower() in SPAN_COLORS:
+                return SPAN_COLORS[name.lower()]
+    return None
+
+
 def parse_inline(text: str, base: Run | None = None) -> list[Run]:
-    """行の中の書式 (太字・斜体・コード・リンク・改行) を Run の並びにする"""
+    """行の中の書式 (太字・斜体・コード・リンク・色・改行) を Run の並びにする"""
     base = base or Run("")
     runs: list[Run] = []
 
     def add(s: str, code: bool = False, link: str | None = None) -> None:
         if s:
             runs.append(
-                Run(
-                    s,
-                    base.bold,
-                    base.italic,
-                    base.code or code,
-                    base.strike,
-                    link or base.link,
-                )
+                replace(base, text=s, code=base.code or code, link=link or base.link)
             )
 
-    def nested(s: str, **changes: bool | str) -> None:
-        sub = Run(
-            "",
-            bool(changes.get("bold", base.bold)),
-            bool(changes.get("italic", base.italic)),
-            base.code,
-            bool(changes.get("strike", base.strike)),
-            str(changes["link"]) if "link" in changes else base.link,
-        )
+    def nested(s: str, sub: Run) -> None:
         runs.extend(parse_inline(s, sub))
 
     pos = 0
@@ -484,17 +521,31 @@ def parse_inline(text: str, base: Run | None = None) -> list[Run]:
         elif g["img"]:
             add(g["imgalt"])
         elif g["link"]:
-            nested(g["linktext"], link=g["href"])
+            nested(g["linktext"], replace(base, link=g["href"]))
         elif g["autolink"]:
             add(g["auto"], link=g["auto"])
         elif g["bold"]:
-            nested(g["boldtext"] or g["boldtext2"] or "", bold=True)
+            nested(g["boldtext"] or g["boldtext2"] or "", replace(base, bold=True))
         elif g["strike"]:
-            nested(g["striketext"], strike=True)
+            nested(g["striketext"], replace(base, strike=True))
         elif g["em"]:
-            nested(g["emtext"] or g["emtext2"] or "", italic=True)
+            nested(g["emtext"] or g["emtext2"] or "", replace(base, italic=True))
+        elif g["span"]:
+            color = span_color(g["spanattrs"] or "") or base.color
+            nested(g["spantext"], replace(base, color=color))
+        elif g["htag"]:
+            tag = g["htagname"].lower()
+            sub = {
+                "b": replace(base, bold=True),
+                "strong": replace(base, bold=True),
+                "i": replace(base, italic=True),
+                "em": replace(base, italic=True),
+                "u": replace(base, underline=True),
+            }.get(tag, replace(base, strike=True))
+            nested(g["htagtext"], sub)
         elif g["br"] or g["nl"]:
             runs.append(Run("\n"))
+        # そのほかの HTML タグ (g["tag"]) は表示しない (Marp も HTML として扱う)
     add(unescape(text[pos:]))
     return runs
 
@@ -559,7 +610,7 @@ def run_char_width(ch: str, run: Run, size: float) -> float:
     if run.code:
         return 0.55 * size * 0.85
     width = char_em(ch) * size
-    if (run.bold or run.italic) and not is_wide(ch):  # 強調 (italic) も太字で表示
+    if run.bold and not is_wide(ch):
         width *= 1.06
     return width
 
@@ -1442,7 +1493,7 @@ class Layout:
 
 def header_runs(runs: list[Run]) -> list[Run]:
     """見出しの行 (th) は太字"""
-    return [Run(r.text, True, r.italic, r.code, r.strike, r.link) for r in runs]
+    return [replace(r, bold=True) for r in runs]
 
 
 def table_widths(
@@ -1785,15 +1836,16 @@ class SlideWriter:
     def run_props(self, p: Para, run: Run, tag: str = "a:rPr") -> str:
         size = p.size * (0.85 if run.code else 1)
         attrs = f'lang="ja-JP" altLang="en-US" sz="{pt100(size)}"'
-        # 強調 (*文字*、run.italic) は斜体にせず、色 (HIGHLIGHT) と太字にする (theme.css の em)
-        if p.bold or run.bold or run.italic:
+        if p.bold or run.bold:
             attrs += ' b="1"'
-        if p.italic:
+        if p.italic or run.italic:
             attrs += ' i="1"'
+        if run.underline:
+            attrs += ' u="sng"'
         if run.strike:
             attrs += ' strike="sngStrike"'
         attrs += ' dirty="0"'
-        color = HIGHLIGHT if run.italic else p.color
+        color = run.color or p.color  # <span class="red"> などの色
         inner = f'<a:solidFill><a:srgbClr val="{color}"/></a:solidFill>'
         if run.code:
             inner += f'<a:highlight><a:srgbClr val="{INLINE_CODE_BG}"/></a:highlight>'

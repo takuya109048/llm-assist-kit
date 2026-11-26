@@ -298,9 +298,13 @@ def test_vscode_preview_copies_theme_and_registers_it(tmp_path: Path):
 
     theme = slides.parent / "assets" / "kit-slides.css"
     assert theme.read_bytes() == build.THEME.read_bytes()
-    assert read_settings(workspace) == {
-        "markdown.marp.themes": ["./slides/assets/kit-slides.css"]
-    }
+    assert (
+        read_settings(workspace)
+        == {
+            "markdown.marp.themes": ["./slides/assets/kit-slides.css"],
+            "markdown.marp.enableHtml": True,  # 文字の色分け (<span>) をプレビューでも表示する
+        }
+    )
     assert len(messages) == 2
     # 2 回目は何もしない
     assert build.setup_vscode_preview(slides.parent, workspace) == []
@@ -320,6 +324,7 @@ def test_vscode_settings_keep_other_values(tmp_path: Path):
     assert read_settings(tmp_path) == {
         "editor.wordWrap": "on",
         "markdown.marp.themes": ["./other.css", "./a/b/assets/kit-slides.css"],
+        "markdown.marp.enableHtml": True,
     }
 
 
@@ -406,3 +411,32 @@ def test_skill_says_when_to_draw_svg_figures():
     assert "確認せず" in section
     # 仮の画像は、作れない画像 (写真・スクリーンショット) のときだけ
     assert "写真や画面のスクリーンショットなど" in text
+
+
+def test_html_is_enabled_for_existing_settings(tmp_path: Path):
+    """テーマは登録済みでも、HTML (色分けの <span>) が無効なら有効にする"""
+    settings = tmp_path / ".vscode" / "settings.json"
+    settings.parent.mkdir()
+    settings.write_text(
+        '{"markdown.marp.themes": ["./assets/kit-slides.css"]}', encoding="utf-8"
+    )
+    assert build.register_vscode_theme(tmp_path, tmp_path)
+    assert read_settings(tmp_path)["markdown.marp.enableHtml"] is True
+    assert build.register_vscode_theme(tmp_path, tmp_path) is None  # 2 回目は何もしない
+
+
+def test_pdf_command_enables_html():
+    """Markdown の中の HTML (<span class="red"> など) を使えるように --html を付ける"""
+    command = build.build_command(Path("s.md"), "pdf", Path("s.pdf"))
+    assert "--html" in command and "--pdf" in command
+    assert command.count("--html") == 1
+    html = build.build_command(Path("s.md"), "html", Path("s.html"))
+    assert html.count("--html") == 1 and "--pdf" not in html
+
+
+def test_theme_has_span_colors():
+    css = (SKILL / "theme.css").read_text(encoding="utf-8")
+    for name in ("red", "blue", "green", "orange", "gray"):
+        assert f"section .{name} {{\n  color: var(--kit-{name});" in css
+    # *強調* は Markdown の標準のまま (色を付けない)
+    assert "section em" not in css
