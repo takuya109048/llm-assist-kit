@@ -336,12 +336,12 @@ section.image > p:not(:has(> img:only-child)) {
   color: var(--kit-muted);
 }
 
-/* ---- 表紙 ---- */
+/* ---- 表紙 (文字と線は黒。背景は明るい画像を使う) ---- */
 
 section.cover {
   padding: 0 96px;
-  color: #fff;
-  background-color: var(--kit-accent);
+  color: var(--kit-text);
+  background-color: #fff;
 }
 
 section.cover::before,
@@ -364,8 +364,8 @@ section.cover > h1 {
   font-size: 56px;
   line-height: 1.3;
   font-weight: 700;
-  color: #fff;
-  border-bottom: 3px solid #fff;
+  color: var(--kit-text);
+  border-bottom: 3px solid var(--kit-text);
 }
 
 /* 下半分: 部署名と日付 */
@@ -374,7 +374,7 @@ section.cover > p {
   text-align: left;
   font-size: 28px;
   line-height: 1.7;
-  color: #fff;
+  color: var(--kit-text);
 }
 
 section.cover > p + p {

@@ -1235,7 +1235,7 @@ class Layout:
         if title_index is not None:
             title = blocks.pop(title_index)
             assert isinstance(title, Heading)
-            para = Para(title.runs, 56, 72.8, WHITE, bold=True)
+            para = Para(title.runs, 56, 72.8, TEXT, bold=True)
             bottom = COVER_TITLE_H - COVER_TITLE_PAD - COVER_LINE
             shapes.append(
                 TextBox(
@@ -1248,7 +1248,7 @@ class Layout:
                 COVER_TITLE_H - COVER_LINE,
                 width,
                 COVER_LINE,
-                WHITE,
+                TEXT,
                 "表紙の線",
             )
         )
@@ -1256,20 +1256,20 @@ class Layout:
         paras: list[Para] = []
         for n, block in enumerate(blocks):
             if isinstance(block, Paragraph):
-                para = Para(block.runs, 28, 47.6, WHITE)
+                para = Para(block.runs, 28, 47.6, TEXT)
                 paras.append(para)
             elif is_text(block):
-                ctx = Context(28, 1.7, WHITE)
+                ctx = Context(28, 1.7, TEXT)
                 sub, _ = text_paras(block, ctx, width)
                 for p in sub:
-                    p.color = WHITE
+                    p.color = TEXT
                 paras.extend(sub)
         if paras:
             height = SLIDE_H - y
             shapes.append(
                 TextBox(COVER_SIDE, y, width, height, paras, name="部署名と日付")
             )
-        return PageShapes(ACCENT, shapes)
+        return PageShapes(WHITE, shapes)
 
     def footer(
         self, slide: Slide, number: int, total: int, shapes: list[Shape]

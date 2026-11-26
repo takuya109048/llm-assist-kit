@@ -224,12 +224,14 @@ def test_header_footer_and_lines_match_theme():
 
 def test_cover_layout():
     page = pages_of()[0]
-    assert page.background == ep.ACCENT
+    assert page.background == ep.WHITE
     bg, title, line, sub = page.shapes
     assert (bg.x, bg.y, bg.w, bg.h) == (0, 0, 1280, 720)
     assert (title.x, title.y, title.w, title.h, title.anchor) == (96, 0, 1088, 329, "b")
     assert (line.x, line.y, line.w, line.h) == (96, 357, 1088, 3)
     assert (sub.x, sub.y) == (96, 388)
+    # 表紙の文字と線は黒
+    assert (title.paras[0].color, line.color, sub.paras[0].color) == (ep.TEXT,) * 3
     runs = [r.text for r in sub.paras[0].runs]
     assert runs == ["情報システム部 業務改善課", "\n", "2026年11月25日"]
 
