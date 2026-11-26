@@ -56,7 +56,7 @@ section footer {
 }
 
 /* 文字の色分け: Markdown の中に <span class="red">文字</span> のように書く
-   (太字にするときは **<span class="red">文字</span>**) */
+   (太字にするときは <span class="red">**文字**</span>。** を span の外に書くと太字にならない) */
 section .red {
   color: var(--kit-red);
 }
