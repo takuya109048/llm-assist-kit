@@ -603,3 +603,32 @@ def test_windows_clipboard_roundtrip_japanese():
 def test_non_windows_rejects_win32_path():
     with pytest.raises(OSError):
         ctx._copy_windows("x")
+
+
+# ---------------------------------------------------------------------------
+# 冒頭プロンプトの <!-- --> コメント
+# ---------------------------------------------------------------------------
+
+
+def test_strip_html_comments():
+    text = (
+        "# T\n\n<!--\nメモ\n-->\n\n## A\n\n<!-- 1 行メモ -->\n"
+        "- テスト: <!-- 例 --> `pytest`\n"
+    )
+    assert ctx.strip_html_comments(text) == "# T\n\n## A\n\n- テスト:  `pytest`\n"
+
+
+def test_strip_html_comments_keeps_code_blocks():
+    text = "<!-- x -->a\n```html\n<!-- keep -->\n```\nb <!-- y -->\n~~~\n<!-- z"
+    assert (
+        ctx.strip_html_comments(text)
+        == "a\n```html\n<!-- keep -->\n```\nb \n~~~\n<!-- z"
+    )
+
+
+def test_prompt_file_comments_are_stripped(tmp_path: Path):
+    (tmp_path / "AGENTS.md").write_text("規則\n<!-- 人向け -->\n", encoding="utf-8")
+    args = ctx.argparse.Namespace(no_prompt=False, prompt=None)
+    prompt, path = ctx.load_prompt(tmp_path, args)
+    assert prompt == "規則\n"
+    assert path == tmp_path / "AGENTS.md"

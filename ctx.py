@@ -1024,6 +1024,52 @@ def run_main(argv: list[str]) -> int:
 # ---------------------------------------------------------------------------
 
 
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def strip_html_comments(text: str) -> str:
+    """冒頭プロンプトから <!-- --> のコメントを取り除く (コードブロックの中は残す)
+
+    Claude Code が CLAUDE.md を読むときと同じく、人向けのメモを LLM に渡さないため。
+    コメントだけだった行は行ごと消し、続いた空行は 1 行にまとめる。
+    """
+    parts: list[str] = []  # コードブロックの外と中を交互に
+    outside: list[str] = []
+    fence: str | None = None
+    for line in text.splitlines(keepends=True):
+        m = _FENCE.match(line)
+        if fence is None:
+            if m:
+                parts.append("".join(outside))
+                outside = [line]
+                fence = m.group(1)
+                continue
+            outside.append(line)
+        else:
+            outside.append(line)
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence):
+                parts.append("".join(outside))
+                outside = []
+                fence = None
+    parts.append("".join(outside))
+    if fence is not None:  # 閉じていないコードブロックは最後まで中として扱う
+        parts.append("")
+    result = []
+    for i, part in enumerate(parts):
+        if i % 2 == 0 and "<!--" in part:
+            removed = _HTML_COMMENT.sub("\0", part)
+            lines = removed.splitlines(keepends=True)
+            kept = [
+                ln.replace("\0", "")
+                for ln in lines
+                if "\0" not in ln or ln.replace("\0", "").strip()
+            ]
+            part = re.sub(r"\n{3,}", "\n\n", "".join(kept))
+        result.append(part)
+    return "".join(result).lstrip("\n")
+
+
 def load_prompt(root: Path, args: argparse.Namespace) -> tuple[str, Path | None]:
     if args.no_prompt:
         return "", None
@@ -1031,11 +1077,11 @@ def load_prompt(root: Path, args: argparse.Namespace) -> tuple[str, Path | None]
         p = Path(args.prompt)
         if not p.is_absolute():
             p = root / p
-        return read_text(p), p
+        return strip_html_comments(read_text(p)), p
     for name in PROMPT_FILES:
         p = root / name
         if p.is_file():
-            return read_text(p), p
+            return strip_html_comments(read_text(p)), p
     return DEFAULT_PROMPT, None
 
 
