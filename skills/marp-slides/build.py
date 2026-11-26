@@ -30,6 +30,7 @@ import argparse
 import importlib.util
 import json
 import platform
+import re
 import shutil
 import stat
 import subprocess
@@ -292,6 +293,36 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
+# Markdown の画像 (![...](パス))。front matter の footer の中のものも含む
+IMAGE_RE = re.compile(r"!\[[^\]]*\]\(\s*<?([^)\s>]+)>?")
+
+
+def missing_images(markdown: str, folder: Path) -> list[str]:
+    """スライドが使っている画像のうち、ファイルが無いもののパス (書いてあるまま)
+
+    Marp は見つからない画像を何も言わずに空白にするので、書き出す前に知らせる。
+    """
+    missing = []
+    for ref in IMAGE_RE.findall(markdown):
+        if re.match(r"^[a-z][a-z0-9+.-]*:", ref, re.I):
+            continue  # http: や data: など
+        path = Path(ref)
+        if not path.is_absolute():
+            path = folder / path
+        if not path.is_file() and ref not in missing:
+            missing.append(ref)
+    return missing
+
+
+def missing_image_message(ref: str, folder: Path) -> str:
+    message = f"注意: 画像がありません (空白になります): {ref}"
+    # 以前の既定の画像 (SVG) を使っているが、今の既定 (PNG) しか無い場合
+    png = Path(ref).with_suffix(".png")
+    if Path(ref).suffix.lower() == ".svg" and (folder / png).is_file():
+        message += f" → スライドの {ref} を {png.as_posix()} に書き換えてください"
+    return message
+
+
 def build_pptx(slides: Path, output: Path) -> int:
     """文字を編集できる PPTX を作る (Marp CLI は使わない)"""
     for message in load_editable_pptx().convert(slides, output):
@@ -314,6 +345,8 @@ def main(argv: list[str] | None = None) -> int:
     markdown = slides.read_text(encoding="utf-8", errors="replace")
     for message in prepare_folder(slides.parent, Path.cwd().resolve(), markdown):
         print(message)
+    for ref in missing_images(markdown, slides.parent):
+        print(missing_image_message(ref, slides.parent), file=sys.stderr)
 
     if args.format == "pptx":
         return build_pptx(slides, output)

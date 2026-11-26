@@ -345,3 +345,27 @@ def test_workspace_root(tmp_path: Path):
 
 def test_vscode_preview_is_skipped_inside_the_kit():
     assert build.setup_vscode_preview(SKILL, SKILL.parent.parent) == []
+
+
+def test_missing_images_are_reported(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    """見つからない画像は、書き出す前に知らせる (以前の SVG の名前なら PNG への書き換えを案内)"""
+    slides = tmp_path / "s.md"
+    slides.write_text(
+        '---\nfooter: "![logo](assets/logo.svg)"\n---\n\n![bg](assets/background.png)\n'
+        "\n![](https://example.com/a.png) ![](none.png)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(build, "build_pptx", lambda slides, output: 0)
+
+    assert build.main([str(slides), "--pptx"]) == 0
+
+    err = capsys.readouterr().err
+    assert (
+        "assets/logo.svg → スライドの assets/logo.svg を assets/logo.png に書き換えて"
+        in err
+    )
+    assert "none.png" in err
+    assert "background.png" not in err  # 既定の画像はコピーされるのであるもの
+    assert "example.com" not in err
