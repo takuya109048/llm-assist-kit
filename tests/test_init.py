@@ -37,9 +37,14 @@ def test_creates_files_and_git(tmp_path: Path):
     code, out = run_init(tmp_path)
     assert code == 0, out
     agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
-    for heading in ("## コマンド", "## 進め方", "## 境界", "## 回答"):
+    for heading in (
+        "## コマンド",
+        "## 開発の流れ (llm-assist-kit)",
+        "## 進め方",
+        "## 境界",
+    ):
         assert heading in agents
-    assert len(agents.splitlines()) < 60  # 短く保つ
+    assert len(agents.splitlines()) < 80  # 短く保つ
     assert (tmp_path / ".ctxignore").is_file()
     assert ".venv/" in (tmp_path / ".gitignore").read_text(encoding="utf-8")
     assert (tmp_path / ".git").is_dir()
