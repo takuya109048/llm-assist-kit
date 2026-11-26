@@ -210,7 +210,8 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
   `image-right` (右に画像)、`image-left` (左に画像)、`table` (真ん中に大きな表)、
   `image` (真ん中に大きな画像)、`center` (ど真ん中に大きめのテキスト) を選べます
 - 文字の強調: `*言葉*` は赤の太字 (斜体にはしない)、`**言葉**` は黒の太字
-- フロー図・構成図などは、LLM が SVG ファイル (`slides/assets/<名前>.svg`) をスライドと同じパッチで作り、
+- フロー図・構成図などは、ユーザーが求めたとき、または図のほうが伝わると LLM が判断したときに、
+  LLM が SVG ファイル (`slides/assets/<名前>.svg`) をスライドと同じパッチで作り、
   画像のレイアウト (`image` / `image-right` / `image-left`) に貼ります。大きさ・色・使える要素の決まりは
   [SKILL.md](skills/marp-slides/SKILL.md) に、見本は [`example-flow.svg`](skills/marp-slides/assets/example-flow.svg) にあります。
   PowerPoint では SVG の画像として入り、「図形に変換」で箱や文字を個別に編集できます

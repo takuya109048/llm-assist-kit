@@ -395,3 +395,14 @@ def test_example_flow_svg_follows_the_skill_rules():
     # 見本のスライドで使っていて、build.py の既定の画像 (slideinit でコピー) ではない
     assert "assets/example-flow.svg" in (SKILL / "example.md").read_text("utf-8")
     assert "example-flow.svg" not in build.ASSET_FILES
+
+
+def test_skill_says_when_to_draw_svg_figures():
+    """図は、ユーザーが求めたときと、LLM が必要と判断したときに、確認せずに作る"""
+    text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    section = text[text.index("### 図を SVG で作る") :]
+    assert "ユーザーが図を求めたとき" in section
+    assert "図のほうが伝わるとあなたが判断したとき" in section
+    assert "確認せず" in section
+    # 仮の画像は、作れない画像 (写真・スクリーンショット) のときだけ
+    assert "写真や画面のスクリーンショットなど" in text
