@@ -61,6 +61,7 @@ PAGE_NUMBER_SIZE = 24  # ページ番号 (section::after) の文字の大きさ
 
 ACCENT = "1F4E8C"  # --kit-accent
 LINE = "B3B3B3"  # --kit-line (ヘッダー・フッターの線)
+HIGHLIGHT = "D32F2F"  # --kit-highlight (強調 *文字* の色。斜体にせず太字にする)
 TEXT = "222222"  # --kit-text
 MUTED = "666666"  # --kit-muted
 WHITE = "FFFFFF"
@@ -558,7 +559,7 @@ def run_char_width(ch: str, run: Run, size: float) -> float:
     if run.code:
         return 0.55 * size * 0.85
     width = char_em(ch) * size
-    if run.bold and not is_wide(ch):
+    if (run.bold or run.italic) and not is_wide(ch):  # 強調 (italic) も太字で表示
         width *= 1.06
     return width
 
@@ -1784,14 +1785,16 @@ class SlideWriter:
     def run_props(self, p: Para, run: Run, tag: str = "a:rPr") -> str:
         size = p.size * (0.85 if run.code else 1)
         attrs = f'lang="ja-JP" altLang="en-US" sz="{pt100(size)}"'
-        if p.bold or run.bold:
+        # 強調 (*文字*、run.italic) は斜体にせず、色 (HIGHLIGHT) と太字にする (theme.css の em)
+        if p.bold or run.bold or run.italic:
             attrs += ' b="1"'
-        if p.italic or run.italic:
+        if p.italic:
             attrs += ' i="1"'
         if run.strike:
             attrs += ' strike="sngStrike"'
         attrs += ' dirty="0"'
-        inner = f'<a:solidFill><a:srgbClr val="{p.color}"/></a:solidFill>'
+        color = HIGHLIGHT if run.italic else p.color
+        inner = f'<a:solidFill><a:srgbClr val="{color}"/></a:solidFill>'
         if run.code:
             inner += f'<a:highlight><a:srgbClr val="{INLINE_CODE_BG}"/></a:highlight>'
             fonts = (MONO_FONT, EA_FONT, MONO_FONT)

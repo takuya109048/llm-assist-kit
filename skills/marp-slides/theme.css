@@ -22,6 +22,8 @@
   --kit-text: #222;
   --kit-muted: #666;
   --kit-line: #b3b3b3;
+  /* 強調 (*文字*) の色 */
+  --kit-highlight: #d32f2f;
   /* ヘッダー・フッターの線は同じ太さ。本文をできるだけ広くとる */
   --kit-header-h: 68px;
   --kit-footer-h: 52px;
@@ -47,6 +49,14 @@ section h6,
 section table,
 section footer {
   font-family: var(--kit-font);
+}
+
+/* 強調 (*文字*): 斜体にはせず (日本語の斜体は読みにくい)、色と太字で目立たせる。
+   太字 (**文字**) は黒のまま */
+section em {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--kit-highlight);
 }
 
 /* 見出しの文字も本文と同じ黒 (default テーマの色付きの見出しを上書き) */

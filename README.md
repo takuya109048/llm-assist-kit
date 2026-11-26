@@ -209,6 +209,11 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - 本文のレイアウトは 1 カラムのほか、`<!-- _class: ... -->` で `cols` (テキストの 2 カラム)、
   `image-right` (右に画像)、`image-left` (左に画像)、`table` (真ん中に大きな表)、
   `image` (真ん中に大きな画像)、`center` (ど真ん中に大きめのテキスト) を選べます
+- 文字の強調: `*言葉*` は赤の太字 (斜体にはしない)、`**言葉**` は黒の太字
+- フロー図・構成図などは、LLM が SVG ファイル (`slides/assets/<名前>.svg`) をスライドと同じパッチで作り、
+  画像のレイアウト (`image` / `image-right` / `image-left`) に貼ります。大きさ・色・使える要素の決まりは
+  [SKILL.md](skills/marp-slides/SKILL.md) に、見本は [`example-flow.svg`](skills/marp-slides/assets/example-flow.svg) にあります。
+  PowerPoint では SVG の画像として入り、「図形に変換」で箱や文字を個別に編集できます
 - 見た目はテーマ [`theme.css`](skills/marp-slides/theme.css) (`theme: kit-slides`) で決めます。
   フォントは半角英数が Segoe UI、全角 (日本語) がメイリオです
 - 全パターンを使った見本: [`example.md`](skills/marp-slides/example.md) (11 枚) と、

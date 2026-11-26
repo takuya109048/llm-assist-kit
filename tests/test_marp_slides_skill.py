@@ -369,3 +369,29 @@ def test_missing_images_are_reported(
     assert "none.png" in err
     assert "background.png" not in err  # 既定の画像はコピーされるのであるもの
     assert "example.com" not in err
+
+
+def test_example_flow_svg_follows_the_skill_rules():
+    """見本の SVG の図は、SKILL.md の決まり (大きさ・使える要素) に沿っている"""
+    from xml.etree import ElementTree
+
+    path = SKILL / "assets" / "example-flow.svg"
+    root = ElementTree.parse(path).getroot()
+    assert (root.get("width"), root.get("height")) == ("1100", "440")
+    assert root.get("viewBox") == "0 0 1100 440"
+    allowed = {"rect", "line", "polyline", "polygon", "circle", "path", "text"}
+    tags = {el.tag.split("}")[-1] for el in root.iter()} - {"svg"}
+    assert tags <= allowed, tags - allowed
+    text = path.read_text(encoding="utf-8")
+    for banned in (
+        "<style",
+        "class=",
+        "<foreignObject",
+        "<marker",
+        "marker-end",
+        "<filter",
+    ):
+        assert banned not in text
+    # 見本のスライドで使っていて、build.py の既定の画像 (slideinit でコピー) ではない
+    assert "assets/example-flow.svg" in (SKILL / "example.md").read_text("utf-8")
+    assert "example-flow.svg" not in build.ASSET_FILES
