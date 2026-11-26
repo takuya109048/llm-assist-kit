@@ -212,11 +212,10 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 ```powershell
 python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md          # PDF
-python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md --pptx   # PowerPoint (各スライドは画像)
-python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md --pptx-editable  # 文字を編集できる PowerPoint
+python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skills/marp-slides/build.py slides/発表.md --pptx   # 文字を編集できる PowerPoint
 ```
 
-- `--pptx-editable` は Marp CLI を使わず、[`editable_pptx.py`](skills/marp-slides/editable_pptx.py)
+- `--pptx` は Marp CLI を使わず、[`editable_pptx.py`](skills/marp-slides/editable_pptx.py)
   (標準ライブラリだけ) が Markdown から直接 PPTX を作ります。Chrome / Edge / LibreOffice も不要です。
   - 文字は PowerPoint の段落、箇条書きと番号付きリストは PowerPoint の箇条書き、表は PowerPoint の表、
     画像・線・ロゴは個別の図形になり、そのまま編集できます。ページ番号はスライド番号のフィールドです
@@ -227,12 +226,13 @@ python C:/tools/llm-assist-kit/ctx.py run -- python C:/tools/llm-assist-kit/skil
   - 対象は SKILL.md の書き方 (表紙、本文のレイアウト、見出し・段落・箇条書き・表・画像・太字・斜体など) です。
     `<style>` や HTML で決めた見た目は再現しません
   - 画像は SVG のまま埋め込むので、PowerPoint 2016 以降で開いてください
+  - 各スライドを画像にした (文字を編集できない) PPTX は作りません。以前の `--pptx-editable` は `--pptx` と同じです
   - 見本の PPTX を作り直す:
-    `python skills/marp-slides/build.py skills/marp-slides/example.md --pptx-editable -o examples/marp-slides-example.pptx`
+    `python skills/marp-slides/build.py skills/marp-slides/example.md --pptx -o examples/marp-slides-example.pptx`
 
 - Marp CLI は [`marp.zip`](skills/marp-slides/marp.zip) に入っている公式の単体版 (Windows x64 用。MIT) を
   初回に `skills/marp-slides/.bin/` に取り出して使うので、Node.js は不要です。
-  PDF / PPTX の書き出しには Edge か Chrome を使います
+  PDF の書き出しには Edge か Chrome を使います
 - zip にその OS 用が無ければ、`marp` コマンド、`npx @marp-team/marp-cli` (Node.js が必要) の順に使います
 - zip の作り直し: `python tools/build_marp_zip.py` (`--version v4.5.1` で版を指定、
   `--targets windows-x86_64,linux-x86_64` で対象を追加。取得したファイルは公開されている SHA-256 と照合します)

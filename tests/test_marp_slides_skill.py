@@ -174,7 +174,7 @@ def test_bundled_zip_has_windows_marp():
         ([], "pdf"),
         (["--html"], "html"),
         (["--pptx"], "pptx"),
-        (["--pptx-editable"], "pptx-editable"),
+        (["--pptx-editable"], "pptx"),  # 以前の名前
         (["-o", "out.pptx"], "pptx"),
         (["-o", "out.txt"], "pdf"),
     ],
@@ -218,21 +218,23 @@ def test_main_runs_marp_with_theme(
 
 def test_formats_are_exclusive():
     with pytest.raises(SystemExit):
-        build.parse_args(["s.md", "--pptx", "--pptx-editable"])
+        build.parse_args(["s.md", "--pdf", "--pptx"])
 
 
-def test_editable_pptx_is_made_without_marp(
+@pytest.mark.parametrize("option", ["--pptx", "--pptx-editable"])
+def test_pptx_is_editable_and_made_without_marp(
+    option: str,
     slides: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ):
-    """--pptx-editable は Marp CLI もブラウザも使わず、Python だけで PPTX を作る"""
+    """PPTX は文字を編集できるもので、Marp CLI もブラウザも使わず Python だけで作る"""
     monkeypatch.setattr(build, "marp_command", lambda: pytest.fail("Marp CLI を呼んだ"))
     monkeypatch.setattr(
         build.subprocess, "run", lambda cmd: pytest.fail("外部コマンドを呼んだ")
     )
 
-    assert build.main([str(slides), "--pptx-editable"]) == 0
+    assert build.main([str(slides), option]) == 0
 
     out = slides.resolve().with_suffix(".pptx")
     with zipfile.ZipFile(out) as zf:

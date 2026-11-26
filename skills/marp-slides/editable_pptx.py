@@ -4,7 +4,7 @@
     python editable_pptx.py slides.md               # slides.pptx を作る
     python editable_pptx.py slides.md -o out.pptx
 
-ふつうは build.py の --pptx-editable から使う。標準ライブラリだけで動き、Marp CLI・
+ふつうは build.py の --pptx から使う。標準ライブラリだけで動き、Marp CLI・
 ブラウザ・LibreOffice は使わない。
 
 - 対象は SKILL.md の書き方に沿った Markdown (表紙、ヘッダー/フッター、本文のレイアウト
