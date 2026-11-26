@@ -304,3 +304,51 @@ def test_same_profile_is_written_once(monkeypatch: pytest.MonkeyPatch):
         install, "run_powershell", lambda exe, cmd: "/home/u/profile.ps1"
     )
     assert install.find_profiles() == [("powershell", Path("/home/u/profile.ps1"))]
+
+
+# ---------------------------------------------------------------------------
+# 同じ名前の古い定義の警告
+# ---------------------------------------------------------------------------
+
+
+def test_find_conflicts_in_sibling_profiles(tmp_path: Path):
+    profile = tmp_path / "profile.ps1"
+    profile.write_text(
+        "function ctx-old { }\n" + block() + "Set-Alias -Name 'Reset' Foo\n",
+        encoding="utf-8-sig",
+    )
+    host = tmp_path / "Microsoft.PowerShell_profile.ps1"
+    host.write_text(
+        "# function ctx { } (コメント)\n"
+        "function ctx { python C:\\old\\ctx.py @args }\n"
+        "function global:addcommit{ git add -A }\n"
+        "function ctxx { }\n",
+        encoding="cp932",
+    )
+    (tmp_path / "other.ps1").write_text("function ctx { }\n", encoding="utf-8")
+
+    found = install.find_conflicts(profile, [f.name for f in install.FUNCTIONS])
+    got = [(c.path.name, c.lineno, c.name, c.alias) for c in found]
+    end = len(block().splitlines()) + 2
+    assert got == [
+        ("profile.ps1", end, "reset", True),
+        ("Microsoft.PowerShell_profile.ps1", 2, "ctx", False),
+        ("Microsoft.PowerShell_profile.ps1", 3, "addcommit", False),
+    ]
+
+
+def test_install_warns_about_conflicts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    p = tmp_path / "profile.ps1"
+    old = tmp_path / "Microsoft.VSCode_profile.ps1"
+    old.write_text("function ctx { python C:\\old\\ctx.py @args }\n", encoding="utf-8")
+
+    code, out = run_install(capsys, "--profile", str(p), "--python", PYTHON)
+    assert code == 0
+    assert "同じ名前の古い定義が残っています" in out
+    assert f"{old}:1: ctx (関数)" in out
+
+    old.unlink()
+    code, out = run_install(capsys, "--profile", str(p), "--python", PYTHON)
+    assert "古い定義" not in out

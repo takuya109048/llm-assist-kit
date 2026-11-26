@@ -49,6 +49,9 @@ python install.py
   何度実行しても同じです。キットのフォルダを移したら、もう一度実行してください
 - 実行ポリシーが `Restricted` だとプロファイルが読み込まれません。そのときは注意と、直すコマンドを表示します
   (`python install.py --set-execution-policy` で、現在のユーザーだけ `RemoteSigned` にもできます)
+- 同じフォルダの別のプロファイル (`Microsoft.PowerShell_profile.ps1` や `Microsoft.VSCode_profile.ps1`) に
+  同じ名前の関数やエイリアスが残っていると、そちらが後から読み込まれて優先されます。見つけたら場所を表示するので、
+  古い定義を消してから PowerShell を開き直してください
 - `python install.py --uninstall` で外せます。`--print` で書き込む内容だけ表示します
 - 関数を追加するときは、`install.py` の `FUNCTIONS` に 1 行足して `python install.py` を実行し直します
   (関数の中身のスクリプトは `commands/` に置きます)
