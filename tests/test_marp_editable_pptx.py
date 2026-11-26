@@ -207,6 +207,7 @@ def test_header_footer_and_lines_match_theme():
         "ctr",
     )
     assert title.paras[0].size == 36 and title.paras[0].bold
+    assert title.paras[0].color == ep.TEXT  # 文字は黒 (青ではない)
     lines = [(s.y, s.h) for s in page.shapes if isinstance(s, ep.Rect)]
     assert lines == [(84, 3), (663, 1)]
     [logo] = shapes_named(page, "ロゴ")
@@ -215,6 +216,7 @@ def test_header_footer_and_lines_match_theme():
     assert logo.w == pytest.approx(34 * 160 / 48)
     [number] = shapes_named(page, "ページ番号")
     assert [r.text for r in number.paras[0].runs] == ["2", " / 11"]
+    assert number.paras[0].size == ep.PAGE_NUMBER_SIZE == 24
     assert number.paras[0].field_slidenum
 
 
@@ -449,3 +451,16 @@ def test_theme_values_match_theme_css():
     assert "--kit-image-w: 46%;" in css
     assert "padding: 0 96px;" in css
     assert f"height: {ep.LOGO_H}px;" in css
+    assert f"font-size: {ep.PAGE_NUMBER_SIZE}px;\n  color: var(--kit-muted);" in css
+    # 文字は黒が基本 (青は線・表の見出しの背景・表紙の背景だけ)
+    assert not re.search(r"(?<![-\w])color: var\(--kit-accent\)", css)
+
+
+def test_headings_are_black():
+    """見出し (ヘッダーのタイトル・小見出し・center の小見出し) の文字は黒"""
+    pages = pages_of()
+    for page in pages[1:]:
+        for shape in page.shapes:
+            if isinstance(shape, ep.TextBox):
+                for p in shape.paras:
+                    assert p.color in (ep.TEXT, ep.MUTED), (shape.name, p.color)
