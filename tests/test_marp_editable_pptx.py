@@ -168,24 +168,27 @@ def test_closing_punctuation_does_not_start_a_line():
 
 # (スライド番号, 段落の先頭, 左端, 上端) ― Chromium で測った値
 MEASURED = [
-    (2, "現状の課題（1", 108.0, 93.2),
-    (2, "まとめ（ど真ん中", 108.0, 457.2),
-    (3, "問い合わせ件数が", 108.0, 93.2),
-    (3, "2024年度：月", 160.0, 132.2),
-    (3, "回答までに平均", 108.0, 223.2),
-    (4, "定型の質問は A", 56.0, 88.0),
-    (4, "社内規程と過去の", 108.0, 134.5),
-    (4, "難しい質問は担当", 56.0, 243.0),
-    (4, "AI が回答でき", 108.0, 289.5),
-    (5, "現行の対応", 56.0, 88.0),
-    (5, "新方式", 672.0, 88.0),
-    (5, "回答まで当日中を", 724.0, 225.5),
-    (6, "社内ポータルから", 108.0, 93.2),
-    (7, "一次回答", 676.8, 88.0),
-    (7, "難しい質問は要点", 676.8, 244.0),
+    # 1 カラムは、本文のかたまりを上下の真ん中に置く (あふれるときは上詰め)
+    (2, "現状の課題（1", 108.0, 171.1),
+    (2, "まとめ（ど真ん中", 108.0, 535.1),
+    (3, "問い合わせ件数が", 108.0, 265.3),
+    (3, "2024年度：月", 160.0, 304.3),
+    (3, "回答までに平均", 108.0, 395.3),
+    (4, "定型の質問は A", 56.0, 249.8),
+    (4, "社内規程と過去の", 108.0, 296.3),
+    (4, "難しい質問は担当", 56.0, 404.8),
+    (4, "AI が回答でき", 108.0, 451.3),
+    # cols は、2 つのカラムの上端をそろえ、全体を上下の真ん中に置く
+    (5, "現行の対応", 56.0, 281.8),
+    (5, "新方式", 672.0, 281.8),
+    (5, "回答まで当日中を", 724.0, 419.3),
+    # image-right / image-left のテキストも上下の真ん中
+    (6, "社内ポータルから", 108.0, 305.0),
+    (7, "一次回答", 676.8, 264.5),
+    (7, "難しい質問は要点", 676.8, 420.5),
     (9, "問い合わせ対応シ", 56.0, 88.0),
     (9, "社内ポータル・A", 56.0, 619.0),
-    (10, "工数の削減分で、", 108.0, 305.0),
+    (10, "工数の削減分で、", 108.0, 459.0),
     (1, "情報システム部", 96.0, 388.0),
 ]
 
@@ -194,6 +197,57 @@ MEASURED = [
 def test_paragraph_positions_match_marp(page: int, text: str, x: float, y: float):
     tops = para_tops(pages_of()[page - 1])
     assert tops[text] == (pytest.approx(x, abs=0.5), pytest.approx(y, abs=0.5))
+
+
+UNEVEN_COLS = """---
+marp: true
+theme: kit-slides
+footer: "x"
+---
+
+<!-- _class: cols -->
+
+## 高さの違う 2 カラム
+
+### 左
+
+- 要点 1
+- 要点 2
+- 要点 3
+- 要点 4
+- 要点 5
+
+### 右
+
+- 要点 A
+
+---
+
+## あふれる
+
+""" + "".join(f"- {n}\n" for n in range(1, 14))
+
+
+def test_cols_align_tops_and_center_the_taller_column():
+    """低いカラムは高いカラムと上端をそろえ、高いカラムの高さで上下の真ん中に置く
+    (Chromium: 小見出しはどちらも 236.3、要点 A は 282.8)"""
+    page = ep.Layout(Path("."), []).slide(slides_of(UNEVEN_COLS)[0], 1, 2)
+    tops = para_tops(page)
+    assert tops["左"] == (56.0, pytest.approx(236.3, abs=0.5))
+    assert tops["右"] == (672.0, pytest.approx(236.3, abs=0.5))
+    assert tops["要点 A"] == (724.0, pytest.approx(282.8, abs=0.5))
+    assert tops["要点 5"][1] == pytest.approx(464.8, abs=0.5)
+
+
+def test_overflowing_body_is_packed_to_the_top():
+    """本文が入りきらないときは、上下の真ん中にせず上から詰める (Chromium: 93.2)"""
+    page = ep.Layout(Path("."), []).slide(slides_of(UNEVEN_COLS)[1], 2, 2)
+    assert para_tops(page)["1"] == (108.0, pytest.approx(93.2, abs=0.5))
+
+
+def test_centered_top():
+    assert ep.centered_top(0) == (ep.BODY_TOP + ep.BODY_BOTTOM) / 2
+    assert ep.centered_top(10_000) == ep.BODY_TOP
 
 
 def test_header_footer_and_lines_match_theme():
@@ -269,7 +323,7 @@ def test_normal_table_fits_its_text():
     """ふつうの表は文字に合わせた幅 (列は文字が 1 行に収まる幅)"""
     page = pages_of()[9]
     [table] = [s for s in page.shapes if isinstance(s, ep.TableShape)]
-    assert (table.x, table.y) == (56.5, 88.5)
+    assert (table.x, table.y) == (56.5, 242.5)  # 上下の真ん中 (Chromium: 242)
     assert table.row_heights == [50.0] * 4  # 8 + 33 + 8 + 1
     assert 400 < sum(table.col_widths) < 460
 
