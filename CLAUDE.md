@@ -23,6 +23,9 @@ poetry、conda は使わないでください。ロックファイルはあり�
 - `skills/marp-slides/marp.zip` には Marp CLI の単体版 (公式リリースの Windows 用 `marp.exe`) が
   入っている。手で編集せず、`python tools/build_marp_zip.py` で作り直すこと (公開されている
   SHA-256 と照合する)。`skills/marp-slides/.bin/` はコミットしない。
+- どちらの zip にも、中の実行ファイルに組み込まれた他のソフトのライセンス文
+  (`THIRD_PARTY_LICENSES.txt`) を入れる。ビルドスクリプトが `tools/third_party.py` で作る。
+  実行ファイルを変えずにライセンス文だけ作り直すときは `--licenses-only` を付ける。
 
 ## コードの実行
 
