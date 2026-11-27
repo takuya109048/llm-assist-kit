@@ -54,6 +54,8 @@ Windows では実際のクリップボードへ書き込み、読み戻して日
    (手元で zip だけ作るときは `python tools/build_release.py v0.1.0`。`dist/` にできます)
 3. 既にあるリリースの zip を作り直すときは、**Run workflow** で版を入れ、**rebuild** に印を付けます。
    その版のタグのファイルから zip を作り直して置き換えます (zip に入れないものは今の決まりに従います)
+4. 古い版のリリースを消すときは、**delete_releases** に版をカンマ区切りで書きます (例 `v0.1.0,v0.2.0`)。
+   リリースの後に消します。タグは残ります
 
 配布用の zip には、開発用のもの (`tests/`・`tools/`・`.github/`・`examples/`・`CLAUDE.md`・
 `DEVELOPMENT.md`・`.gitignore`) を入れません。
