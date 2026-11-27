@@ -235,6 +235,37 @@ def test_main_runs_marp_with_theme(
     assert f"作成しました: {out}" in capsys.readouterr().out
 
 
+def test_main_shrinks_overflowing_slides_through_a_temporary_file(
+    slides: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    """入りきらない本文があれば、文字を小さくする CSS を足した一時ファイルを Marp に渡し、
+    終わったら消す"""
+    slides = slides.resolve()
+    slides.write_text(
+        "---\nmarp: true\n---\n\n## たくさん\n\n"
+        + "".join(f"- {n}\n" for n in range(1, 41)),
+        encoding="utf-8",
+    )
+    seen: list[str] = []
+
+    def run(cmd: list[str]) -> subprocess.CompletedProcess:
+        source = Path(cmd[1])
+        assert source.parent == slides.parent and source != slides
+        seen.append(source.read_text(encoding="utf-8"))
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(build, "marp_command", lambda: ["marp"])
+    monkeypatch.setattr(build.subprocess, "run", run)
+
+    assert build.main([str(slides)]) == 0
+    [text] = seen
+    assert "<style scoped>" in text and "zoom: 0.5;" in text
+    assert sorted(p.name for p in slides.parent.glob("*.md")) == [slides.name]
+    assert "警告: スライド 1: 本文が多すぎて" in capsys.readouterr().err
+
+
 def test_formats_are_exclusive():
     with pytest.raises(SystemExit):
         build.parse_args(["s.md", "--pdf", "--pptx"])

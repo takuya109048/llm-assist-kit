@@ -55,6 +55,12 @@ BODY_W = SLIDE_W - 2 * SIDE
 COLS_GAP = 64  # section.cols の column-gap
 IMAGE_W = SLIDE_W * 0.46  # section.image-right / image-left の --kit-image-w
 IMAGE_GAP = 32  # 画像とテキストの間
+# 本文が上下に入りきらないときは、入るまで文字 (と図や表) を小さくする。
+# 元の大きさに対する割合の下限と刻み。それでも入らなければ下限の大きさで上から詰める
+MIN_FIT = 0.5
+FIT_STEP = 0.01
+# 倍率を決めるときは、幅を少し狭く見積もる (実際のフォントで折り返しが 1 行増えても入るように)
+FIT_WIDTH = 0.97
 COVER_SIDE = 96  # section.cover の左右の余白
 COVER_TITLE_H = SLIDE_H / 2  # 表紙のタイトル (h1) の高さ (下端が中央の線)
 COVER_TITLE_PAD = 28
@@ -202,11 +208,14 @@ def unquote(value: str) -> str:
     return value
 
 
-def split_slides(body: str) -> list[str]:
-    """--- だけの行でスライドに分ける (コードブロックの中は除く)"""
-    slides: list[list[str]] = [[]]
+def slide_ranges(lines: list[str], start: int = 0) -> list[tuple[int, int]]:
+    """lines[start:] を --- だけの行でスライドに分け、各スライドの行の範囲を返す
+    (コードブロックの中の --- は区切りにしない)"""
+    ranges: list[tuple[int, int]] = []
+    first = start
     fence = ""
-    for line in body.splitlines():
+    for i in range(start, len(lines)):
+        line = lines[i]
         m = FENCE_RE.match(line)
         if m:
             if not fence:
@@ -214,14 +223,29 @@ def split_slides(body: str) -> list[str]:
             elif line.strip().startswith(fence):
                 fence = ""
         if not fence and line.strip() == "---":
-            slides.append([])
-        else:
-            slides[-1].append(line)
-    texts = ["\n".join(lines) for lines in slides]
+            ranges.append((first, i))
+            first = i + 1
+    ranges.append((first, len(lines)))
     # 本文の先頭が --- のとき (フロントマターの直後) にできる空のスライドは除く
-    if len(texts) > 1 and not texts[0].strip():
-        texts = texts[1:]
-    return texts
+    if len(ranges) > 1 and not "".join(lines[ranges[0][0] : ranges[0][1]]).strip():
+        ranges = ranges[1:]
+    return ranges
+
+
+def split_slides(body: str) -> list[str]:
+    """--- だけの行でスライドに分ける (コードブロックの中は除く)"""
+    lines = body.splitlines()
+    return ["\n".join(lines[a:b]) for a, b in slide_ranges(lines)]
+
+
+def front_matter_end(lines: list[str]) -> int:
+    """フロントマターの次の行の番号 (フロントマターが無ければ 0)"""
+    if not lines or lines[0].strip() != "---":
+        return 0
+    for end in range(1, len(lines)):
+        if lines[end].strip() in ("---", "..."):
+            return end + 1
+    return 0
 
 
 def parse_directives(comment: str) -> dict[str, tuple[str, bool]] | None:
@@ -1913,6 +1937,9 @@ class Layout:
     def __init__(self, base_dir: Path, warn: list[str]) -> None:
         self.base_dir = base_dir
         self.warn = warn
+        self.number = 0  # 並べているスライドの番号 (警告に使う)
+        # スライドの番号 → 小さくした本文の部分と倍率 ("body" / "left" / "right")
+        self.fits: dict[int, dict[str, float]] = {}
 
     def resolve(self, src: str) -> Path | None:
         if re.match(r"^[a-z][a-z0-9+.-]*://", src, re.I):
@@ -1986,6 +2013,60 @@ class Layout:
         if not blocks:
             return 0.0
         return self.flow(blocks, 0.0, 0.0, w, NORMAL, [], first_margin)
+
+    def fit(
+        self,
+        blocks: list[Block],
+        w: float,
+        first_margin: bool,
+        part: str,
+        trailing: float = 0.0,
+    ) -> tuple[float, float]:
+        """本文の高さに入る最大の倍率と、そのときの高さを返す
+
+        倍率 s は CSS の zoom と同じで、文字・余白・図をすべて s 倍にし、折り返しは
+        幅 w / s で行う。入らなければ MIN_FIT の倍率にし、警告を出す。
+        trailing は最後の要素の下に数える余白 (これも s 倍になる)。
+        """
+        avail = BODY_BOTTOM - BODY_TOP
+
+        def height(s: float, width: float = w * FIT_WIDTH) -> float:
+            return s * (self.flow_height(blocks, width / s, first_margin) + trailing)
+
+        if not blocks or height(1.0) <= avail + 0.5:
+            return 1.0, height(1.0, w)
+        steps = round((1.0 - MIN_FIT) / FIT_STEP)
+        for k in range(1, steps + 1):
+            s = round(1.0 - k * FIT_STEP, 4)
+            if height(s) <= avail + 0.5:
+                self.fits.setdefault(self.number, {})[part] = s
+                return s, height(s, w)
+        self.fits.setdefault(self.number, {})[part] = MIN_FIT
+        self.warn.append(
+            f"スライド {self.number}: 本文が多すぎて、文字を {MIN_FIT:.0%} に"
+            "小さくしても入りきりません (上から詰めて、下がはみ出します)"
+        )
+        return MIN_FIT, height(MIN_FIT, w)
+
+    def flow_fit(
+        self,
+        blocks: list[Block],
+        x: float,
+        y: float,
+        w: float,
+        s: float,
+        shapes: list[Shape],
+        first_margin: bool,
+    ) -> None:
+        """flow を倍率 s で行う (幅 w / s で並べてから、(x, y) を中心に s 倍にする)"""
+        if s == 1.0:
+            self.flow(blocks, x, y, w, NORMAL, shapes, first_margin)
+            return
+        part: list[Shape] = []
+        self.flow(blocks, x, y, w / s, NORMAL, part, first_margin)
+        for shape in part:
+            scale_shape(shape, x, y, s)
+        shapes.extend(part)
 
     def place_block(
         self,
@@ -2099,6 +2180,7 @@ class Layout:
     # -- スライド --
 
     def slide(self, slide: Slide, number: int, total: int) -> PageShapes:
+        self.number = number
         if slide.cls.split() and "cover" in slide.cls.split():
             return self.cover(slide)
         shapes: list[Shape] = []
@@ -2154,9 +2236,9 @@ class Layout:
         elif layout in ("table", "image"):
             self.centered_column(blocks, layout, shapes)
         else:
-            height = self.flow_height(blocks, BODY_W, first_margin)
+            s, height = self.fit(blocks, BODY_W, first_margin, "body")
             top = centered_top(height)
-            self.flow(blocks, BODY_LEFT, top, BODY_W, NORMAL, shapes, first_margin)
+            self.flow_fit(blocks, BODY_LEFT, top, BODY_W, s, shapes, first_margin)
         self.footer(slide, number, total, shapes)
         return PageShapes(WHITE, shapes)
 
@@ -2284,16 +2366,15 @@ class Layout:
         col_w = (BODY_W - COLS_GAP) / 2
         left, right = blocks[:split], blocks[split:]
         # 2 つのカラムは上端をそろえ、高いほうの高さのかたまりを上下の真ん中に置く
-        # (theme.css の column-fill: balance。カラムの最後の余白は数えない)
-        height = max(
-            self.flow_height(left, col_w, first_margin),
-            self.flow_height(right, col_w, False),
-        )
-        top = centered_top(height)
-        self.flow(left, BODY_LEFT, top, col_w, NORMAL, shapes, first_margin)
+        # (theme.css の column-fill: balance。カラムの最後の余白は数えない)。
+        # 入りきらないカラムは、そのカラムだけ文字を小さくする
+        s_left, h_left = self.fit(left, col_w, first_margin, "left")
+        s_right, h_right = self.fit(right, col_w, False, "right")
+        top = centered_top(max(h_left, h_right))
+        self.flow_fit(left, BODY_LEFT, top, col_w, s_left, shapes, first_margin)
         if right:
             x = BODY_LEFT + col_w + COLS_GAP
-            self.flow(right, x, top, col_w, NORMAL, shapes, False)
+            self.flow_fit(right, x, top, col_w, s_right, shapes, False)
 
     def side_image(
         self, blocks: list[Block], layout: str, shapes: list[Shape], first_margin: bool
@@ -2319,9 +2400,9 @@ class Layout:
                     image_x, BODY_TOP, IMAGE_W, BODY_BOTTOM - BODY_TOP, iw, ih
                 )
                 shapes.append(self.figure(path, *box, image.alt))
-        height = self.flow_height(blocks, text_w, first_margin) + trailing
+        s, height = self.fit(blocks, text_w, first_margin, "body", trailing)
         top = centered_top(height)
-        self.flow(blocks, text_x, top, text_w, NORMAL, shapes, first_margin)
+        self.flow_fit(blocks, text_x, top, text_w, s, shapes, first_margin)
 
     def center(self, blocks: list[Block], shapes: list[Shape]) -> None:
         """文字を大きく、上下左右の真ん中に置く (1 つのテキストボックスで、上下の中央ぞろえ)"""
@@ -2402,6 +2483,54 @@ class Layout:
             else:
                 self.place_block(block, BODY_LEFT, y, BODY_W, ctx, shapes)
             y += h + bottom
+
+
+def scale_para(para: Para, s: float) -> None:
+    para.size *= s
+    para.line *= s
+    para.space_before *= s
+    para.space_after *= s
+    para.mar_l *= s
+    para.indent *= s
+
+
+def scale_shape(shape: Shape | Geom, ox: float, oy: float, s: float) -> None:
+    """図形を (ox, oy) を中心に s 倍にする (CSS の zoom と同じく、文字・線・余白も)"""
+    shape.x = ox + (shape.x - ox) * s
+    shape.y = oy + (shape.y - oy) * s
+    if isinstance(shape, TableShape):
+        shape.col_widths = [w * s for w in shape.col_widths]
+        shape.row_heights = [h * s for h in shape.row_heights]
+        for row in shape.rows:
+            for cell in row:
+                cell.pad_x *= s
+                cell.pad_y *= s
+                for para in cell.paras:
+                    scale_para(para, s)
+        return
+    shape.w *= s
+    shape.h *= s
+    if isinstance(shape, TextBox):
+        shape.inset_t *= s
+        shape.inset_b *= s
+        shape.inset_l *= s
+        shape.inset_r *= s
+        for para in shape.paras:
+            scale_para(para, s)
+    elif isinstance(shape, Geom):
+        shape.stroke_w *= s
+        shape.radius *= s
+        shape.inset_l *= s
+        shape.inset_r *= s
+        shape.inset_t *= s
+        shape.path = [
+            (op, [(px * s, py * s) for px, py in pts]) for op, pts in shape.path
+        ]
+        for para in shape.paras:
+            scale_para(para, s)
+    elif isinstance(shape, Drawing):
+        for item in shape.items:
+            scale_shape(item, ox, oy, s)
 
 
 def centered_top(height: float) -> float:
@@ -3088,6 +3217,46 @@ def build_package(pages: list[PageShapes], title: str) -> Package:
         "application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml",
     )
     return package
+
+
+# 本文を小さくするときに、Marp (PDF / HTML) の各スライドに足す CSS。
+# 小さくする要素: タイトル (##)・ヘッダー・フッター以外。image-right / image-left の画像は除く
+FIT_SELECTORS = {
+    "body": "section > :not(h2, header, footer, p:has(> img:only-child))",
+    "left": "section > :not(h2, header, footer, h3 ~ h3, h3 ~ h3 ~ *)",
+    "right": "section > h3 ~ h3, section > h3 ~ h3 ~ :not(header, footer)",
+}
+
+
+def fit_style(fits: dict[str, float]) -> str:
+    """本文を小さくする <style scoped> (CSS の zoom。editable_pptx の倍率と同じ)"""
+    rules = " ".join(
+        f"{FIT_SELECTORS[part]} {{ zoom: {s:g}; }}" for part, s in sorted(fits.items())
+    )
+    return f"<style scoped>{rules}</style>"
+
+
+def layout_slides(source: Path) -> tuple[list[Slide], list[PageShapes], Layout]:
+    slides = parse_markdown(source.read_text(encoding="utf-8"))
+    layout = Layout(source.parent, [])
+    total = len(slides)
+    pages = [layout.slide(slide, n, total) for n, slide in enumerate(slides, start=1)]
+    return slides, pages, layout
+
+
+def fit_markdown(source: Path) -> tuple[str | None, list[str]]:
+    """本文が入りきらないスライドに、文字を小さくする <style scoped> を足した Markdown と
+    警告を返す (小さくするスライドが無ければ None)。Marp で PDF / HTML にするときに使う"""
+    _, _, layout = layout_slides(source)
+    warnings = [w for w in dict.fromkeys(layout.warn) if w.startswith("スライド ")]
+    if not layout.fits:
+        return None, warnings
+    lines = source.read_text(encoding="utf-8").replace("\r\n", "\n").split("\n")
+    ranges = slide_ranges(lines, front_matter_end(lines))
+    for number in sorted(layout.fits, reverse=True):
+        _, end = ranges[number - 1]
+        lines[end:end] = ["", fit_style(layout.fits[number]), ""]
+    return "\n".join(lines), warnings
 
 
 def convert(source: Path, output: Path) -> list[str]:

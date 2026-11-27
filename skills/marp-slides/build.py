@@ -359,12 +359,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.format == "pptx":
         return build_pptx(slides, output)
 
+    # 本文が入りきらないスライドは、入るまで文字を小さくする (PPTX と同じ倍率)。
+    # その CSS を足した Markdown を、同じフォルダの一時ファイルにして Marp に渡す
+    fitted, warnings = load_editable_pptx().fit_markdown(slides)
+    for message in warnings:
+        print(f"警告: {message}", file=sys.stderr)
+    source = slides
+    if fitted is not None:
+        source = slides.with_name(f".{slides.stem}.fit{slides.suffix}")
+        source.write_text(fitted, encoding="utf-8")
     try:
-        command = build_command(slides, args.format, output)
+        command = build_command(source, args.format, output)
+        result = subprocess.run(command)
     except FileNotFoundError as e:
         print(e, file=sys.stderr)
         return 1
-    result = subprocess.run(command)
+    finally:
+        if source != slides:
+            source.unlink(missing_ok=True)
     if result.returncode != 0:
         message = f"Marp CLI が失敗しました (終了コード {result.returncode})"
         print(message, file=sys.stderr)
