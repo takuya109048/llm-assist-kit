@@ -1,8 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1100" height="440" viewBox="0 0 1100 440" font-family="Segoe UI, Meiryo, sans-serif">
   <!-- SVG で作る図 (フロー図) の見本。SKILL.md の「図を SVG で作る」の決まりに沿って書いている -->
-  <rect x="0" y="0" width="1100" height="440" fill="#ffffff"/>
+  <!-- 矢じり (線の marker-end で使う)。PowerPoint では線の矢印になる -->
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#666666"/>
+    </marker>
+  </defs>
 
-  <!-- 箱 (左から順に処理が流れる) -->
+  <!-- 上の見出し -->
+  <text x="20" y="60" font-size="22" fill="#666666">問い合わせから回答までの流れ</text>
+
+  <!-- 箱 (左から順に処理が流れる)。文字は箱の中に置くと、PowerPoint では箱の文字になる -->
   <rect x="20" y="110" width="200" height="140" rx="10" fill="#f3f5f8" stroke="#b3b3b3" stroke-width="2"/>
   <text x="120" y="172" font-size="26" font-weight="700" fill="#222222" text-anchor="middle">社員</text>
   <text x="120" y="208" font-size="20" fill="#666666" text-anchor="middle">質問を入力</text>
@@ -20,19 +28,12 @@
   <text x="970" y="172" font-size="26" font-weight="700" fill="#222222" text-anchor="middle">担当者</text>
   <text x="970" y="208" font-size="20" fill="#666666" text-anchor="middle">確認して送信</text>
 
-  <!-- 矢印 (線 + 三角形。marker は使わない) -->
-  <line x1="220" y1="180" x2="286" y2="180" stroke="#666666" stroke-width="3"/>
-  <polygon points="298,180 284,172 284,188" fill="#666666"/>
-  <line x1="500" y1="180" x2="566" y2="180" stroke="#666666" stroke-width="3"/>
-  <polygon points="578,180 564,172 564,188" fill="#666666"/>
-  <line x1="780" y1="180" x2="846" y2="180" stroke="#666666" stroke-width="3"/>
-  <polygon points="858,180 844,172 844,188" fill="#666666"/>
+  <!-- 矢印 (箱の辺の真ん中から、次の箱の辺の真ん中まで)。PowerPoint では箱につながった矢印になる -->
+  <line x1="220" y1="180" x2="300" y2="180" stroke="#666666" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="500" y1="180" x2="580" y2="180" stroke="#666666" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="780" y1="180" x2="860" y2="180" stroke="#666666" stroke-width="3" marker-end="url(#arrow)"/>
 
   <!-- 戻りの流れ (点線)。強調したい言葉は赤 -->
-  <polyline points="970,250 970,330 680,330 680,264" fill="none" stroke="#666666" stroke-width="3" stroke-dasharray="10 8"/>
-  <polygon points="680,252 672,266 688,266" fill="#666666"/>
+  <polyline points="970,250 970,330 680,330 680,250" fill="none" stroke="#666666" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arrow)"/>
   <text x="825" y="372" font-size="22" fill="#d32f2f" font-weight="700" text-anchor="middle">回答を蓄積して精度を上げる</text>
-
-  <!-- 上の見出し -->
-  <text x="20" y="60" font-size="22" fill="#666666">問い合わせから回答までの流れ</text>
 </svg>

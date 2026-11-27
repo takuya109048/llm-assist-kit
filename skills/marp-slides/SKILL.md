@@ -243,16 +243,39 @@ footer: "![logo](assets/logo.png)"
     (補足は `#666666`、強調は `#d32f2f`)
   - 箱: `<rect rx="10" fill="#f3f5f8" stroke="#b3b3b3" stroke-width="2"/>`。主役の箱だけ
     `fill="#e8eef6" stroke="#1f4e8c" stroke-width="3"` にします
-  - 線と矢印: `stroke="#666666" stroke-width="3"`。矢印の先は `<polygon>` の三角形で描きます
-    (PowerPoint で崩れないように `marker` は使いません)。戻りや補助の線は `stroke-dasharray="10 8"`
+  - 線と矢印: `stroke="#666666" stroke-width="3"`。戻りや補助の線は `stroke-dasharray="10 8"`
+
+#### PowerPoint で編集できる図にする書き方
+
+`slidepptx` は、SVG の図を画像ではなく **PowerPoint の図形 (箱・矢印・テキスト) のグループ** に置き換えます。
+置き換えられるように、図は次の書き方だけで作ります (外れたものが 1 つでもあると、図全体が画像のまま入ります)。
+
+- 使う要素は `rect`・`circle`・`ellipse`・`line`・`polyline`・`polygon`・`path`・`text` (と、文字の一部の色・太さを変える
+  `<tspan>`)・`g`・矢じりの `<defs><marker>` だけにします。
+  `<style>`・`class`・`<image>`・`<foreignObject>`・`<use>`・`filter`・グラデーション・回転 (`rotate`)・外部のフォントは使いません。
+  `g` の `transform` は `translate(...)` だけにします。
+- **箱の文字は、箱の中に置きます**。`text-anchor="middle"` と、`x` に箱の横の真ん中を書きます。箱の中にある `<text>` は、
+  PowerPoint では箱そのものの文字になります (箱を動かすと文字もいっしょに動き、箱をクリックして文字を書き換えられます)。
+  1 つの箱に 2 行書くときは、`x` が同じ `<text>` を 2 つ書きます。
+- **矢印は、線 (`line`・`polyline`・`path`) に `marker-end="url(#arrow)"` を付けて描きます** (両向きは `marker-start` も付ける)。
+  矢じりの三角形を別の `<polygon>` で描かないでください。矢じりは SVG の先頭に 1 回だけ定義します。
+  矢じりの色 (`fill`) は線の色と同じにします (線の色ごとに `id` を変えて定義します)。
+
+  ```svg
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#666666"/>
+    </marker>
+  </defs>
+  ```
+- 箱と箱をつなぐまっすぐな矢印は、`<line>` で **箱の辺の真ん中から、次の箱の辺の真ん中まで** 引きます
+  (例: 左の箱の右辺の真ん中 → 右の箱の左辺の真ん中)。PowerPoint では箱につながった矢印 (コネクタ) になり、
+  箱を動かすと矢印がついてきます。折れ線は `polyline` で描きます (PowerPoint ではフリーフォームの線になります)。
 - SVG は自動で折り返さないので、文字は短くし、箱の幅を「文字数 × 文字の大きさ + 40」以上にします。
-  2 行にするときは `<text>` を 2 つ書きます。文字を箱の真ん中に置くときは `text-anchor="middle"` を使い、
-  縦の位置は `y` で決めます (`dominant-baseline` は使いません)。
-- 使うのは `rect`・`line`・`polyline`・`polygon`・`circle`・`path`・`text` だけにします。
-  `<style>`・`class`・`<foreignObject>`・`filter`・外部の画像やフォントは使いません。
+  文字を箱の真ん中に置くときは `text-anchor="middle"` を使い、縦の位置は `y` で決めます (`dominant-baseline` は使いません)。
 - 見本: `${SKILL_DIR}/assets/example-flow.svg` (見本のスライド `example.md` の「システム構成」で使っています)。
-- PowerPoint (`slidepptx`) では、図は SVG の画像として入ります。PowerPoint で図を右クリックして
-  「図形に変換」すると、箱や文字を個別に編集できると伝えてください。
+- PowerPoint (`slidepptx`) では、図は箱・矢印・テキストの図形のグループとして入り、そのまま編集できると伝えてください
+  (グループを選んで中の図形をクリックすると、1 つずつ選べます)。文字の位置は PDF と少し違うことがあります。
 
 ### 書き出し
 
@@ -272,7 +295,8 @@ slidepptx "<スライドのパス>"
 - `slidepptx` の PowerPoint は、文字・箇条書き・番号・表が PowerPoint のテキストや表として編集でき、
   位置はテーマと同じになります (Python だけで作るので、Marp CLI・ブラウザ・ほかのソフトは不要)。
   この書き方 (上の決まり) から外れた Markdown や HTML は再現されません。文字の折り返し位置が PDF と
-  1 文字ほど違うことがあると伝えてください。画像は SVG のまま入るので、PowerPoint 2016 以降で開くよう伝えてください。
+  1 文字ほど違うことがあると伝えてください。SVG の図は PowerPoint の図形になります (上の「PowerPoint で編集できる図にする
+  書き方」から外れた図と仮の画像は SVG の画像のまま入るので、そのときは PowerPoint 2016 以降で開くよう伝えてください)。
 - 書き出しのときも `slideinit` と同じ準備 (足りない画像・テーマ・VS Code の設定) をします。
   既にある画像は上書きされないので、同じ名前の画像を置けば差し替えられます。
 - VS Code のプレビューで `theme: kit-slides` が「not recognized」と警告されるときは、`slideinit` を実行し、

@@ -385,18 +385,13 @@ def test_example_flow_svg_follows_the_skill_rules():
     assert (root.get("width"), root.get("height")) == ("1100", "440")
     assert root.get("viewBox") == "0 0 1100 440"
     allowed = {"rect", "line", "polyline", "polygon", "circle", "path", "text"}
+    allowed |= {"defs", "marker"}  # 矢じり (PowerPoint では線の矢印になる)
     tags = {el.tag.split("}")[-1] for el in root.iter()} - {"svg"}
     assert tags <= allowed, tags - allowed
     text = path.read_text(encoding="utf-8")
-    for banned in (
-        "<style",
-        "class=",
-        "<foreignObject",
-        "<marker",
-        "marker-end",
-        "<filter",
-    ):
+    for banned in ("<style", "class=", "<foreignObject", "<filter", "<image"):
         assert banned not in text
+    assert 'marker-end="url(#arrow)"' in text
     # 見本のスライドで使っていて、build.py の既定の画像 (slideinit でコピー) ではない
     assert "assets/example-flow.svg" in (SKILL / "example.md").read_text("utf-8")
     assert "example-flow.svg" not in build.ASSET_FILES
