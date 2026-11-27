@@ -30,7 +30,7 @@ footer: "![logo](assets/logo.png)"
 
 ---
 
-## 現状の課題
+## 現状の<span class="red">課題</span>
 
 - 問い合わせ件数が増え続けている
   - 2024年度：月 1,200 件

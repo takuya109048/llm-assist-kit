@@ -2,12 +2,18 @@ name: Release
 
 # Actions の画面 (または API) から手動で起動する。
 # main の最新のコミットにタグを付け、配布用の zip を添えて GitHub のリリースを作る。
+# rebuild を付けると、既にある版のタグのファイルから zip を作り直して置き換える
+# (zip に入れないものは main の tools/build_release.py の決まりに従う)。
 on:
   workflow_dispatch:
     inputs:
       version:
         description: "リリースする版 (例 v0.1.0。pyproject.toml の version と同じにする)"
         required: true
+      rebuild:
+        description: "既にあるリリースの zip を、その版のタグのファイルから作り直して置き換える"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -36,20 +42,34 @@ jobs:
           pyrefly check
           pytest -q
       - name: Build
+        if: ${{ !inputs.rebuild }}
         env:
           VERSION: ${{ inputs.version }}
         run: python tools/build_release.py "$VERSION"
       - name: Create release
+        if: ${{ !inputs.rebuild }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
         run: |
           tag="v${VERSION#v}"
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "リリース $tag はもうあります" >&2
+            echo "リリース $tag はもうあります (作り直すときは rebuild を付ける)" >&2
             exit 1
           fi
           gh release create "$tag" dist/llm-assist-kit-"$tag".zip \
             --target "$GITHUB_SHA" \
             --title "$tag" \
             --notes-file dist/release-notes.md
+      - name: Rebuild release zip
+        if: ${{ inputs.rebuild }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          tag="v${VERSION#v}"
+          gh release view "$tag" >/dev/null
+          git fetch --depth 1 origin "refs/tags/$tag:refs/tags/$tag"
+          git worktree add --detach "$RUNNER_TEMP/kit-$tag" "$tag"
+          python tools/build_release.py "$tag" --root "$RUNNER_TEMP/kit-$tag"
+          gh release upload "$tag" dist/llm-assist-kit-"$tag".zip --clobber

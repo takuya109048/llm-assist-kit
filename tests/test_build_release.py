@@ -46,7 +46,13 @@ def test_release_notes_takes_only_that_section(tmp_path: Path):
 
 
 def test_release_files_drop_dev_only_files():
-    files = ["ctx.py", "tests/test_ctx.py", "tools/x.py", ".github/workflows/ci.yml"]
+    files = [
+        "ctx.py",
+        "tests/test_ctx.py",
+        "tools/x.py",
+        ".github/workflows/ci.yml",
+        "examples/README.md",
+    ]
     assert build_release.release_files(files) == ["ctx.py"]
 
 
@@ -87,3 +93,4 @@ def test_release_contains_licenses():
         "skills/marp-slides/marp.zip",
     ):
         assert name in files
+    assert not any(f.startswith("examples/") for f in files)

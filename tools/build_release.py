@@ -3,15 +3,19 @@
 使い方:
     python tools/build_release.py v0.1.0                 # dist/ に作る
     python tools/build_release.py v0.1.0 --output-dir out
+    python tools/build_release.py v0.1.0 --root <その版を checkout したフォルダ>
 
 作るもの:
     dist/llm-assist-kit-<版>.zip   git が管理しているファイルから、開発用のもの
-                                   (tests/、tools/、.github/) を除いたもの。
+                                   (tests/、tools/、.github/、examples/) を除いたもの。
                                    展開すると llm-assist-kit-<版>/ ができる
     dist/release-notes.md          CHANGELOG.md の、その版の節
 
 版は pyproject.toml の version と一致していなければならない (v は付けても付けなくてもよい)。
-GitHub のリリースは .github/workflows/release.yml が、これを使って作る。
+--root を付けると、そのフォルダ (例えば過去の版のタグを checkout したもの) の
+ファイル・pyproject.toml・CHANGELOG.md から作る。除くもの (DEV_ONLY) はこのスクリプトのものを使う。
+GitHub のリリースは .github/workflows/release.yml が、これを使って作る
+(作り直すときは、既にあるリリースの zip を置き換える)。
 """
 
 from __future__ import annotations
@@ -25,8 +29,8 @@ from pathlib import Path
 
 KIT = Path(__file__).resolve().parent.parent
 NAME = "llm-assist-kit"
-# 配布する zip に入れない、開発用のもの
-DEV_ONLY = ("tests/", "tools/", ".github/")
+# 配布する zip に入れない、開発用のもの (examples/ はリポジトリで見るための例)
+DEV_ONLY = ("tests/", "tools/", ".github/", "examples/")
 
 
 def project_version(root: Path = KIT) -> str:
@@ -92,14 +96,21 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     ap.add_argument("version", help="リリースする版 (例 v0.1.0)")
     ap.add_argument("--output-dir", type=Path, default=KIT / "dist")
+    ap.add_argument(
+        "--root",
+        type=Path,
+        default=KIT,
+        help="zip に入れるキットのフォルダ (既定: このキット)",
+    )
     args = ap.parse_args()
 
-    tag = tag_for(args.version)
-    notes = release_notes(tag)
+    root = args.root.resolve()
+    tag = tag_for(args.version, root)
+    notes = release_notes(tag, root)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "release-notes.md").write_text(notes, encoding="utf-8")
     output = args.output_dir / f"{NAME}-{tag}.zip"
-    files = build_zip(tag, output)
+    files = build_zip(tag, output, root)
     size = output.stat().st_size / 1024 / 1024
     print(f"{output} を作りました ({len(files)} ファイル、{size:.1f} MB)")
     return 0

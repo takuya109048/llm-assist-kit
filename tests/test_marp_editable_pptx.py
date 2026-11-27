@@ -482,7 +482,11 @@ def test_slides_have_editable_text_tables_and_lists(example_pptx: Path):
         xml = {n: zf.read(n).decode("utf-8") for n in slides}
         presentation = zf.read("ppt/presentation.xml").decode("utf-8")
     assert '<p:sldSz cx="12192000" cy="6858000"/>' in presentation  # 1280x720px
-    assert "<a:t>現状の課題</a:t>" in xml["ppt/slides/slide3.xml"]
+    # 見出しの中の色分け: 「課題」だけ赤
+    assert re.search(
+        r"<a:t>現状の</a:t>.*?<a:srgbClr val=\"D32F2F\"/>.*?<a:t>課題</a:t>",
+        xml["ppt/slides/slide3.xml"],
+    )
     assert '<a:buChar char="•"/>' in xml["ppt/slides/slide3.xml"]
     assert '<a:buAutoNum type="arabicPeriod"/>' in xml["ppt/slides/slide2.xml"]
     assert "<a:tbl>" in xml["ppt/slides/slide8.xml"]
