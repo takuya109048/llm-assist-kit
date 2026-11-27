@@ -229,6 +229,29 @@ section.cols > * {
   break-inside: avoid;
 }
 
+/* 本文が入りきらないとき、高さが決まっているとカラムが 3 つ目以降に分かれ、右のカラムが
+   スライドの外に出て見えなくなる。高さを内容に合わせて伸ばし (最小 720px)、2 つのカラムの
+   まま下にはみ出すようにする。伸びてもヘッダー・フッターの線、ページ数、ロゴは
+   スライドの上端からの位置に置く */
+section.cols {
+  height: auto;
+  min-height: 720px;
+}
+
+section.cols::before {
+  bottom: auto;
+  height: calc(
+    720px - var(--kit-header-h) - var(--kit-footer-h) + 2 * var(--kit-line-w)
+  );
+  box-sizing: border-box;
+}
+
+section.cols::after,
+section.cols > footer {
+  bottom: auto;
+  top: calc(720px - var(--kit-footer-h));
+}
+
 /* image-right / image-left: 画像だけの段落を片側 (本文の高さいっぱい) に置き、
    テキストは反対側に寄せる */
 section.image-right,

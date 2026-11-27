@@ -301,6 +301,21 @@ def test_theme_fonts_are_segoe_ui_then_meiryo():
     assert (pptx.LATIN_FONT, pptx.EA_FONT) == ("Segoe UI", "Meiryo")
 
 
+def test_cols_overflow_stays_in_two_columns():
+    """cols の本文が入りきらなくても、3 つ目のカラムに分かれて右がスライドの外に出ないよう、
+    高さを内容に合わせて伸ばす。フッターなどはスライドの上端からの位置に置く
+    (VS Code のプレビューでは文字が小さくならないので、はみ出す部分が見えるように)"""
+    css = (SKILL / "theme.css").read_text(encoding="utf-8")
+    rule = re.search(r"section\.cols \{\s*height: auto;\s*min-height: 720px;\s*\}", css)
+    assert rule
+    assert re.search(
+        r"section\.cols::after,\s*section\.cols > footer \{\s*bottom: auto;\s*"
+        r"top: calc\(720px - var\(--kit-footer-h\)\);",
+        css,
+    )
+    assert "section.cols::before {" in css
+
+
 def test_no_libreoffice_theme():
     """LibreOffice を使う古い方式のテーマは無い"""
     assert not (SKILL / "theme-editable.css").exists()
