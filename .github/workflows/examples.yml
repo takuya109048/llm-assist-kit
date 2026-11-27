@@ -38,6 +38,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - name: Install Japanese fonts
+        # windows-latest (Windows Server) にはメイリオが無いので、日本語の追加フォントを入れる
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:WINDIR\Fonts\meiryo.ttc")) {
+            Add-WindowsCapability -Online -Name "Language.Fonts.Jpan~~~und-JPAN~0.0.1.0"
+          }
+          foreach ($font in "meiryo.ttc", "meiryob.ttc", "segoeui.ttf") {
+            if (-not (Test-Path "$env:WINDIR\Fonts\$font")) {
+              throw "$font がありません"
+            }
+          }
       - name: Build examples
         run: python tools/build_examples.py
       - name: Commit examples

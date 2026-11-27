@@ -31,7 +31,7 @@ EXAMPLES = KIT / "examples"
 PDF = EXAMPLES / "marp-slides-example.pdf"
 PPTX = EXAMPLES / "marp-slides-example.pptx"
 INPUTS_FILE = EXAMPLES / "marp-slides-example.inputs"
-TEXT_SUFFIXES = {".md", ".css", ".svg", ".py"}
+TEXT_SUFFIXES = {".md", ".css", ".svg", ".py", ".yml"}
 
 
 def input_files() -> list[Path]:
@@ -41,6 +41,8 @@ def input_files() -> list[Path]:
         SKILL / "theme.css",
         SKILL / "build.py",
         SKILL / "editable_pptx.py",
+        # 作る環境 (Windows・フォント) もここで決まる
+        KIT / ".github" / "workflows" / "examples.yml",
         *sorted(p for p in (SKILL / "assets").iterdir() if p.is_file()),
     ]
 
