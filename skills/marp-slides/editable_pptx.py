@@ -1981,6 +1981,12 @@ class Layout:
             prev_bottom = bottom
         return y
 
+    def flow_height(self, blocks: list[Block], w: float, first_margin: bool) -> float:
+        """flow で並べたときの高さ (最初のブロックの上の余白から、最後のブロックの下端まで)"""
+        if not blocks:
+            return 0.0
+        return self.flow(blocks, 0.0, 0.0, w, NORMAL, [], first_margin)
+
     def place_block(
         self,
         block: Block,
@@ -2148,7 +2154,9 @@ class Layout:
         elif layout in ("table", "image"):
             self.centered_column(blocks, layout, shapes)
         else:
-            self.flow(blocks, BODY_LEFT, BODY_TOP, BODY_W, NORMAL, shapes, first_margin)
+            height = self.flow_height(blocks, BODY_W, first_margin)
+            top = centered_top(height)
+            self.flow(blocks, BODY_LEFT, top, BODY_W, NORMAL, shapes, first_margin)
         self.footer(slide, number, total, shapes)
         return PageShapes(WHITE, shapes)
 
@@ -2274,12 +2282,18 @@ class Layout:
         ]
         split = h3[1] if len(h3) >= 2 else len(blocks)
         col_w = (BODY_W - COLS_GAP) / 2
-        self.flow(
-            blocks[:split], BODY_LEFT, BODY_TOP, col_w, NORMAL, shapes, first_margin
+        left, right = blocks[:split], blocks[split:]
+        # 2 つのカラムは上端をそろえ、高いほうの高さのかたまりを上下の真ん中に置く
+        # (theme.css の column-fill: balance。カラムの最後の余白は数えない)
+        height = max(
+            self.flow_height(left, col_w, first_margin),
+            self.flow_height(right, col_w, False),
         )
-        if blocks[split:]:
+        top = centered_top(height)
+        self.flow(left, BODY_LEFT, top, col_w, NORMAL, shapes, first_margin)
+        if right:
             x = BODY_LEFT + col_w + COLS_GAP
-            self.flow(blocks[split:], x, BODY_TOP, col_w, NORMAL, shapes, False)
+            self.flow(right, x, top, col_w, NORMAL, shapes, False)
 
     def side_image(
         self, blocks: list[Block], layout: str, shapes: list[Shape], first_margin: bool
@@ -2290,6 +2304,11 @@ class Layout:
             text_x, image_x = BODY_LEFT, SLIDE_W - SIDE - IMAGE_W
         else:
             text_x, image_x = SIDE + IMAGE_W + IMAGE_GAP, SIDE
+        # 画像が最後なら、テキストの最後のブロックの下の余白も高さに数える
+        # (Marp は最後の要素の下の余白を 0 にするが、そのときの最後は画像の段落)
+        trailing = 0.0
+        if images and blocks[: images[-1]] and images[-1] == len(blocks) - 1:
+            trailing = block_margins(blocks[images[-1] - 1], NORMAL)[1]
         if images:
             image = blocks.pop(images[-1])
             assert isinstance(image, Image)
@@ -2300,7 +2319,9 @@ class Layout:
                     image_x, BODY_TOP, IMAGE_W, BODY_BOTTOM - BODY_TOP, iw, ih
                 )
                 shapes.append(self.figure(path, *box, image.alt))
-        self.flow(blocks, text_x, BODY_TOP, text_w, NORMAL, shapes, first_margin)
+        height = self.flow_height(blocks, text_w, first_margin) + trailing
+        top = centered_top(height)
+        self.flow(blocks, text_x, top, text_w, NORMAL, shapes, first_margin)
 
     def center(self, blocks: list[Block], shapes: list[Shape]) -> None:
         """文字を大きく、上下左右の真ん中に置く (1 つのテキストボックスで、上下の中央ぞろえ)"""
@@ -2381,6 +2402,12 @@ class Layout:
             else:
                 self.place_block(block, BODY_LEFT, y, BODY_W, ctx, shapes)
             y += h + bottom
+
+
+def centered_top(height: float) -> float:
+    """高さ height の本文を、ヘッダーとフッターの間の上下の真ん中に置いたときの上端。
+    入りきらないときは上から詰める (theme.css の place-content: safe center)"""
+    return BODY_TOP + max(BODY_BOTTOM - BODY_TOP - height, 0.0) / 2
 
 
 def header_runs(runs: list[Run]) -> list[Run]:

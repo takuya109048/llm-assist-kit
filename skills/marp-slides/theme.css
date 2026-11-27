@@ -98,9 +98,9 @@ section {
   line-height: 1.5;
   color: var(--kit-text);
   background: #fff;
-  /* default テーマの縦中央寄せをやめて上から詰める */
+  /* 本文はヘッダーとフッターの間の上下の真ん中に置く。あふれるときは上から詰める (safe) */
   display: block;
-  place-content: normal;
+  place-content: safe center normal;
 }
 
 /* ヘッダーの下とフッターの上の線 (グレー、同じ太さ。ヘッダー・フッターの内側の端に引く) */
@@ -212,11 +212,12 @@ header {
 
 /* ---- 本文のレイアウト ---- */
 
-/* cols: テキストの 2 カラム。2 つ目の ### (小見出し) から右のカラムにする */
+/* cols: テキストの 2 カラム。2 つ目の ### (小見出し) から右のカラムにする。
+   balance で 2 つのカラムを高いほうの高さにそろえ (上端はそろう)、それを上下の真ん中に置く */
 section.cols {
   column-count: 2;
   column-gap: 64px;
-  column-fill: auto;
+  column-fill: balance;
 }
 
 section.cols > h3 ~ h3 {
@@ -368,6 +369,7 @@ section.image > p:not(:has(> img:only-child)) {
 
 section.cover {
   padding: 0 96px;
+  place-content: normal;
   color: var(--kit-text);
   background-color: #fff;
 }
