@@ -360,6 +360,8 @@ zip を配るときは、中のライセンス文も一緒に配ってくださ�
    main の最新のコミットにタグを付け、`tools/build_release.py` が作った配布用の zip と
    CHANGELOG のその版の節を説明にしてリリースを作ります
    (手元で zip だけ作るときは `python tools/build_release.py v0.1.0`。`dist/` にできます)
+3. 既にあるリリースの zip を作り直すときは、**Run workflow** で版を入れ、**rebuild** に印を付けます。
+   その版のタグのファイルから zip を作り直して置き換えます (zip に入れないものは今の決まりに従います)
 
 ### 開発
 
