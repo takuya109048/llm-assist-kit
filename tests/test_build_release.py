@@ -58,7 +58,7 @@ def test_build_zip_from_tracked_files(tmp_path: Path):
     root = tmp_path / "kit"
     (root / "skills" / "s").mkdir(parents=True)
     (root / "tests").mkdir()
-    (root / "ctx.py").write_text("print(1)\n", encoding="utf-8")
+    (root / "ctx.py").write_bytes(b"print(1)\n")
     (root / "skills" / "s" / "bin.zip").write_bytes(b"PK fake")
     (root / "tests" / "test_x.py").write_text("", encoding="utf-8")
     (root / "untracked.txt").write_text("", encoding="utf-8")
