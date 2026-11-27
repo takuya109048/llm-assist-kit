@@ -70,7 +70,7 @@ def test_example_uses_every_layout():
         assert f"<!-- _class: {name} -->" in text, name
     for ref in re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text):
         assert (SKILL / ref).is_file(), ref
-    assert (SKILL.parent.parent / "examples" / "marp-slides-example.pdf").is_file()
+    assert (SKILL.parent.parent / "examples" / "marp-slides-example.pptx").is_file()
 
 
 @pytest.mark.parametrize("name", LAYOUT_CLASSES)

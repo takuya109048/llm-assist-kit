@@ -8,8 +8,7 @@
 | [`sample-context.md`](sample-context.md) | 実際に取得したコンテキスト(クリップボードに入る内容そのもの) |
 | [`sample-llm-answer.md`](sample-llm-answer.md) | LLM の回答の例(apply-patch スキルに従った、パッチを適用する PowerShell コマンド入り) |
 | [`sample-run-result.md`](sample-run-result.md) | その回答のパッチを `ctx.py run` 経由で `--dry-run` した結果(LLM に貼り返す内容そのもの) |
-| [`marp-slides-example.pdf`](marp-slides-example.pdf) | marp-slides スキルの見本 [`example.md`](../skills/marp-slides/example.md) (表紙と全レイアウト) を書き出した PDF |
-| [`marp-slides-example.pptx`](marp-slides-example.pptx) | 同じ見本を、文字・表・図を PowerPoint で編集できる形で書き出した PPTX |
+| [`marp-slides-example.pptx`](marp-slides-example.pptx) | marp-slides スキルの見本 [`example.md`](../skills/marp-slides/example.md) (表紙と全レイアウト) を、文字・表・図を PowerPoint で編集できる形で書き出した PPTX |
 
 スキルはキットの [`skills/`](../skills/) にあるもの (プロジェクトの外) を使っています。
 キットの場所はマシンごとに違うので、例では `C:/tools/llm-assist-kit` に置いたものとして表しています。

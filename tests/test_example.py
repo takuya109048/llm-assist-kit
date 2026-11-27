@@ -219,7 +219,7 @@ def test_sample_llm_answer_applies_and_tests_pass(tmp_path: Path) -> None:
 
 
 def test_marp_slides_examples_are_up_to_date() -> None:
-    """見本の PDF / PPTX が、今の元 (example.md・テーマ・画像など) から作られている"""
+    """見本の PPTX が、今の元 (example.md・テーマ・画像など) から作られている"""
     spec = importlib.util.spec_from_file_location(
         "build_examples", KIT / "tools" / "build_examples.py"
     )
@@ -227,7 +227,6 @@ def test_marp_slides_examples_are_up_to_date() -> None:
     build_examples = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(build_examples)
     assert build_examples.is_up_to_date(), (
-        "examples/marp-slides-example.pdf / .pptx が古くなっています。作業ブランチに push すると "
-        "GitHub Actions の Examples が作り直します (手元の Windows では "
-        "python tools/build_examples.py)"
+        "examples/marp-slides-example.pptx が古くなっています。"
+        "python tools/build_examples.py で作り直してください"
     )

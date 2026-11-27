@@ -222,8 +222,7 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - 見た目はテーマ [`theme.css`](skills/marp-slides/theme.css) (`theme: kit-slides`) で決めます。
   フォントは半角英数が Segoe UI、全角 (日本語) がメイリオです
 - 全パターンを使った見本: [`example.md`](skills/marp-slides/example.md) (11 枚) と、
-  それを書き出した [`examples/marp-slides-example.pdf`](examples/marp-slides-example.pdf)、
-  文字を編集できる PowerPoint [`examples/marp-slides-example.pptx`](examples/marp-slides-example.pptx)
+  それを書き出した、文字を編集できる PowerPoint [`examples/marp-slides-example.pptx`](examples/marp-slides-example.pptx)
 
 ```powershell
 slideinit                     # slides/ に既定の画像・テーマ・VS Code の設定をそろえる (最初の 1 回)
@@ -247,7 +246,7 @@ slidepptx slides/発表.md       # 文字を編集できる PowerPoint
     `<style>` や HTML で決めた見た目は再現しません
   - 画像は SVG のまま埋め込むので、PowerPoint 2016 以降で開いてください
   - 各スライドを画像にした (文字を編集できない) PPTX は作りません。以前の `--pptx-editable` は `--pptx` と同じです
-  - 見本の PPTX は、下の PDF と一緒に作り直します
+  - 見本の PPTX の作り直しは下を参照
 
 - Marp CLI は [`marp.zip`](skills/marp-slides/marp.zip) に入っている公式の単体版 (Windows x64 用。MIT) を
   初回に `skills/marp-slides/.bin/` に取り出して使うので、Node.js は不要です。
@@ -264,10 +263,9 @@ slidepptx slides/発表.md       # 文字を編集できる PowerPoint
   `markdown.marp.themes` に登録します (拡張機能はワークスペースの中のテーマしか使えないため)。
   ワークスペースは、スライドの上のフォルダで `.vscode` があるところ、無ければ今のフォルダです。
   `settings.json` にコメントがあって読めないときは書き換えず、追加する値を表示します
-- 見本の PDF / PPTX は、元 (`example.md`・テーマ・画像・書き出しのスクリプト・Marp CLI の版) を変えて
-  作業ブランチに push すると、GitHub Actions の **Examples** が Windows で作り直してそのブランチにコミットします
-  (PDF のフォントのメイリオ・Segoe UI と Edge が要るため)。手元の Windows では `python tools/build_examples.py` です。
-  元の SHA-256 を `examples/marp-slides-example.inputs` に記録し、見本が古いとテストが失敗します
+- 見本の PPTX は、元 (`example.md`・テーマ・画像・書き出しのスクリプト) を変えたら
+  `python tools/build_examples.py` で作り直します。元の SHA-256 を `examples/marp-slides-example.inputs` に記録し、
+  見本が古いとテストが失敗します
 
 ### 実行結果のコピー (`run`)
 
