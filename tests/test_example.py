@@ -65,8 +65,13 @@ def test_sample_context_is_up_to_date(capsys: pytest.CaptureFixture[str]) -> Non
 
 
 @pytest.mark.kit_skills
-def test_examples_readme_list_is_up_to_date(capsys: pytest.CaptureFixture[str]) -> None:
+def test_examples_readme_list_is_up_to_date(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     """examples/README.md の `ctx --list` の例が実際の出力と一致する"""
+    # 推定トークン数はスキルのパスの長さで変わるので、キットが例の場所にあるものとして数える
+    estimate = ctx.estimate_tokens
+    monkeypatch.setattr(ctx, "estimate_tokens", lambda text: estimate(normalize(text)))
     rc = ctx.main([str(SAMPLE_PROJECT), "--no-git", "--list"])
     assert rc == 0
     captured = capsys.readouterr()
