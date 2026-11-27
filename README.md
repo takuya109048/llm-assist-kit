@@ -22,6 +22,8 @@ LLM はコマンドを実行できないので、スクリプトは自分で Pow
 ### セットアップ
 
 このキット (リポジトリ) を 1 か所に置きます。プロジェクトには何も置きません。
+[Releases](https://github.com/takuya109048/llm-assist-kit/releases) の `llm-assist-kit-<版>.zip` を
+展開するか、`git clone` します (zip には開発用の `tests/`・`tools/` は入っていません)。
 
 ```
 C:\tools\llm-assist-kit\      ← キット (例)
@@ -326,6 +328,10 @@ my-project/
 
 Markdown 内に ``` を含むファイルは、より長いフェンス (````) で囲むので崩れません。
 
+### ライセンス
+
+このキットは [MIT ライセンス](LICENSE) です。同梱している実行ファイルは、下のとおりそれぞれのライセンスに従います。
+
 ### 同梱しているソフトのライセンス
 
 次の 2 つの zip には、他の人が作ったソフトの実行ファイルが入っています。
@@ -347,6 +353,14 @@ zip を配るときは、中のライセンス文も一緒に配ってくださ�
 - 実行ファイルを変えずにライセンス文だけ作り直す: `python tools/build_apply_patch.py --licenses-only`
   (`BUILD_INFO.txt` のコミットと Rust の版を使う。Linux で mingw-w64 が必要)、
   `python tools/build_marp_zip.py --licenses-only` (`BUILD_INFO.txt` の版を使う)。どちらも git が必要です
+
+### リリース
+
+1. `pyproject.toml` の `version` を上げ、[CHANGELOG.md](CHANGELOG.md) のいちばん上にその版の節 (`## v<版> (<日付>)`) を書いて main に入れる
+2. GitHub の Actions で **Release** を選び、**Run workflow** で版 (例 `v0.1.0`) を入れて実行する。
+   main の最新のコミットにタグを付け、`tools/build_release.py` が作った配布用の zip と
+   CHANGELOG のその版の節を説明にしてリリースを作ります
+   (手元で zip だけ作るときは `python tools/build_release.py v0.1.0`。`dist/` にできます)
 
 ### 開発
 
