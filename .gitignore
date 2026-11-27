@@ -12,7 +12,7 @@ dist/
 .coverage
 htmlcov/
 
-# local Claude Code settings
+# エディタ・ツールのローカル設定
 .claude/settings.local.json
 
 # tools/build_apply_patch.py の作業場所
