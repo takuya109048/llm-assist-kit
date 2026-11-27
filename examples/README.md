@@ -9,6 +9,7 @@
 | [`sample-llm-answer.md`](sample-llm-answer.md) | LLM の回答の例(apply-patch スキルに従った、パッチを適用する PowerShell コマンド入り) |
 | [`sample-run-result.md`](sample-run-result.md) | その回答のパッチを `ctx.py run` 経由で `--dry-run` した結果(LLM に貼り返す内容そのもの) |
 | [`marp-slides-example.pdf`](marp-slides-example.pdf) | marp-slides スキルの見本 [`example.md`](../skills/marp-slides/example.md) (表紙と全レイアウト) を書き出した PDF |
+| [`marp-slides-example.pptx`](marp-slides-example.pptx) | 同じ見本を、文字・表・図を PowerPoint で編集できる形で書き出した PPTX |
 
 スキルはキットの [`skills/`](../skills/) にあるもの (プロジェクトの外) を使っています。
 キットの場所はマシンごとに違うので、例では `C:/tools/llm-assist-kit` に置いたものとして表しています。
@@ -43,7 +44,7 @@ PS> ctx --list
        skill  apply-patch  (C:/tools/llm-assist-kit/skills/apply-patch/SKILL.md)
        skill  marp-slides  (C:/tools/llm-assist-kit/skills/marp-slides/SKILL.md)
 
-16 ファイル / スキル 2 / 推定 6,828 トークン
+16 ファイル / スキル 2 / 推定 10,498 トークン
 ```
 
 ## `.ctxignore` の全パターン
@@ -105,7 +106,7 @@ python C:\tools\llm-assist-kit\ctx.py run -- python C:/tools/llm-assist-kit/skil
 
 ## 例の更新
 
-`tests/test_example.py` が `sample-context.md` / `sample-run-result.md` と実際の出力の一致、上の表のとおりに含まれる/除外されること、
+`tests/test_example.py` が `sample-context.md` / `sample-run-result.md` / 上の `--list` の例と実際の出力の一致、上の表のとおりに含まれる/除外されること、
 `.ctxignore` の全パターンにテストケースがあることを確認しています。
 出力形式を意図して変えたときは次で作り直してください。
 

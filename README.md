@@ -247,8 +247,7 @@ slidepptx slides/発表.md       # 文字を編集できる PowerPoint
     `<style>` や HTML で決めた見た目は再現しません
   - 画像は SVG のまま埋め込むので、PowerPoint 2016 以降で開いてください
   - 各スライドを画像にした (文字を編集できない) PPTX は作りません。以前の `--pptx-editable` は `--pptx` と同じです
-  - 見本の PPTX を作り直す:
-    `python skills/marp-slides/build.py skills/marp-slides/example.md --pptx -o examples/marp-slides-example.pptx`
+  - 見本の PPTX は、下の PDF と一緒に作り直します
 
 - Marp CLI は [`marp.zip`](skills/marp-slides/marp.zip) に入っている公式の単体版 (Windows x64 用。MIT) を
   初回に `skills/marp-slides/.bin/` に取り出して使うので、Node.js は不要です。
@@ -265,8 +264,10 @@ slidepptx slides/発表.md       # 文字を編集できる PowerPoint
   `markdown.marp.themes` に登録します (拡張機能はワークスペースの中のテーマしか使えないため)。
   ワークスペースは、スライドの上のフォルダで `.vscode` があるところ、無ければ今のフォルダです。
   `settings.json` にコメントがあって読めないときは書き換えず、追加する値を表示します
-- テーマを変えたら、見本の PDF を作り直します:
-  `python skills/marp-slides/build.py skills/marp-slides/example.md -o examples/marp-slides-example.pdf`
+- 見本の PDF / PPTX は、元 (`example.md`・テーマ・画像・書き出しのスクリプト・Marp CLI の版) を変えて
+  作業ブランチに push すると、GitHub Actions の **Examples** が Windows で作り直してそのブランチにコミットします
+  (PDF のフォントのメイリオ・Segoe UI と Edge が要るため)。手元の Windows では `python tools/build_examples.py` です。
+  元の SHA-256 を `examples/marp-slides-example.inputs` に記録し、見本が古いとテストが失敗します
 
 ### 実行結果のコピー (`run`)
 

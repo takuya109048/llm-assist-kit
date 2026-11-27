@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,9 @@ EXAMPLES = KIT / "examples"
 SAMPLE_PROJECT = EXAMPLES / "sample-project"
 SAMPLE_CONTEXT = EXAMPLES / "sample-context.md"
 SAMPLE_RUN_RESULT = EXAMPLES / "sample-run-result.md"
+EXAMPLES_README = EXAMPLES / "README.md"
+# examples/README.md の「対象ファイルの確認」に載せている --list の出力
+LIST_BLOCK = re.compile(r"(```text\nPS> ctx --list\n)(.*?)(```)", re.S)
 # LLM の回答の例 (apply-patch スキルのパッチを適用する PowerShell コマンド入り)
 SAMPLE_LLM_ANSWER = EXAMPLES / "sample-llm-answer.md"
 # examples/README.md に載せている run の実行例 (上の回答のパッチを --dry-run で確認)
@@ -56,6 +60,27 @@ def test_sample_context_is_up_to_date(capsys: pytest.CaptureFixture[str]) -> Non
     expected = SAMPLE_CONTEXT.read_text(encoding="utf-8").replace("\r\n", "\n")
     assert actual == expected, (
         "examples/sample-context.md が古くなっています。"
+        "CTX_UPDATE_EXAMPLE=1 pytest tests/test_example.py で更新してください"
+    )
+
+
+@pytest.mark.kit_skills
+def test_examples_readme_list_is_up_to_date(capsys: pytest.CaptureFixture[str]) -> None:
+    """examples/README.md の `ctx --list` の例が実際の出力と一致する"""
+    rc = ctx.main([str(SAMPLE_PROJECT), "--no-git", "--list"])
+    assert rc == 0
+    captured = capsys.readouterr()
+    actual = normalize(captured.out + captured.err)
+    readme = EXAMPLES_README.read_text(encoding="utf-8").replace("\r\n", "\n")
+    m = LIST_BLOCK.search(readme)
+    assert m, "examples/README.md に --list の例がありません"
+    if os.environ.get("CTX_UPDATE_EXAMPLE"):
+        readme = readme[: m.start(2)] + actual + readme[m.end(2) :]
+        EXAMPLES_README.write_text(readme, encoding="utf-8", newline="\n")
+        m = LIST_BLOCK.search(readme)
+        assert m
+    assert actual == m.group(2), (
+        "examples/README.md の --list の例が古くなっています。"
         "CTX_UPDATE_EXAMPLE=1 pytest tests/test_example.py で更新してください"
     )
 
