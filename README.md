@@ -2,10 +2,10 @@
 
 ## ctx.py — プロジェクトを丸ごと LLM チャットに貼るためのツール
 
-エージェントではない普通のチャット型 LLM (ChatGPT / Claude.ai / Gemini など) に、
+エージェントではない普通のチャット型 LLM (ChatGPT / Gemini など) に、
 
-1. **冒頭プロンプト** (CLAUDE.md のような指示文)
-2. **スキル** (このキットの `skills/` にある作業手順と補助スクリプトの説明。Claude Code の `SKILL.md` と同じ形式)
+1. **冒頭プロンプト** (AGENTS.md などの指示文)
+2. **スキル** (このキットの `skills/` にある作業手順と補助スクリプトの説明。`SKILL.md` 形式)
 3. **ディレクトリツリー**
 4. **各ファイルの生ソースコード**
 
@@ -22,8 +22,7 @@ LLM はコマンドを実行できないので、スクリプトは自分で Pow
 ### セットアップ
 
 このキット (リポジトリ) を 1 か所に置きます。プロジェクトには何も置きません。
-[Releases](https://github.com/takuya109048/llm-assist-kit/releases) の `llm-assist-kit-<版>.zip` を
-展開するか、`git clone` します (zip には開発用の `tests/`・`tools/` と、例の `examples/` は入っていません)。
+配布用の `llm-assist-kit-<版>.zip` を展開して置きます。
 
 ```
 C:\tools\llm-assist-kit\      ← キット (例)
@@ -114,7 +113,7 @@ ctx C:\work\other     # 別のフォルダを対象にする
 ### 冒頭プロンプト
 
 ルート直下の `AGENTS.md` → `.ctxprompt.md` → `.ctxprompt` の順に探し、無ければ内蔵の日本語プロンプトを使います。
-プロジェクトの概要・コーディング規約・回答形式などを書いておくと、CLAUDE.md と同じ感覚で使えます。
+プロジェクトの概要・コーディング規約・回答形式などを書いておくと、毎回の指示を省けます。
 新しいプロジェクトでは `init` を実行すると、そのまま使える `AGENTS.md` が作られます。
 このキットでの開発の流れ (`ctx` で貼る → LLM がパッチのコマンドを出す → `ctx run --` で結果を貼る →
 `addcommit` / `reset`) と、進め方 (書く前に考える・シンプルに・必要な箇所だけ変える・ゴールを確かめる・原因を直す)、
@@ -128,7 +127,7 @@ ctx C:\work\other     # 別のフォルダを対象にする
 
 キットの `skills/<名前>/SKILL.md` を読み込み、冒頭プロンプトの後に「# スキル」欄として入れます。
 スキルはプロジェクトに置かず、キットで管理してどのプロジェクトでも使います。
-Claude Code のスキルと同じ形式です。
+`SKILL.md` は、先頭の `name` / `description` と、本文の手順からなる形式です。
 
 | スキル | 内容 |
 | --- | --- |
@@ -198,9 +197,6 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 - 適用は [`apply_patch.zip`](skills/apply-patch/apply_patch.zip) に入っている codex-rs の `apply_patch`
   (Windows x64 / Linux x64 用にビルドしたもの。Apache-2.0) で行います。
   初回に `skills/apply-patch/.bin/` に取り出して使います
-- zip の作り直し: `python tools/build_apply_patch.py` (Linux で、Rust と mingw-w64 が必要。
-  ビルド元のコミットは zip の `BUILD_INFO.txt` に記録されます)。
-  ライセンス文だけを作り直すときは `--licenses-only` を付けます ([同梱しているソフトのライセンス](#同梱しているソフトのライセンス))
 
 ### スライドを作る (marp-slides スキル)
 
@@ -245,7 +241,7 @@ slidepptx slides/発表.md       # 文字を編集できる PowerPoint
 - 本文 (1 カラム、`cols` の各カラム、`image-right` / `image-left` のテキスト) がヘッダーとフッターの間に
   入りきらないときは、入るまで文字・余白・図を小さくします (`cols` は入りきらないカラムだけ。1% 刻みで 50% まで)。
   - 倍率は `editable_pptx.py` が PPTX と同じ配置の計算で決め、PDF / HTML では、その倍率の CSS (`zoom`) を
-    スライドに足した一時ファイルを Marp に渡します。位置は Chromium で描いた結果と一致することをテストで確かめています
+    スライドに足した一時ファイルを Marp に渡します
   - 50% でも入らなければ、そのまま上から詰めて (下ははみ出します)、書き出しのときに警告を出します
   - VS Code のプレビューは Marp がそのまま描くので、小さくならず、入りきらない部分は下にはみ出して見えます
     (`cols` も 2 つのカラムのまま下にはみ出します。スライドの下端より先は見えません)
@@ -253,15 +249,11 @@ slidepptx slides/発表.md       # 文字を編集できる PowerPoint
     `<style>` や HTML で決めた見た目は再現しません
   - 画像は SVG のまま埋め込むので、PowerPoint 2016 以降で開いてください
   - 各スライドを画像にした (文字を編集できない) PPTX は作りません。以前の `--pptx-editable` は `--pptx` と同じです
-  - 見本の PPTX の作り直しは下を参照
 
 - Marp CLI は [`marp.zip`](skills/marp-slides/marp.zip) に入っている公式の単体版 (Windows x64 用。MIT) を
   初回に `skills/marp-slides/.bin/` に取り出して使うので、Node.js は不要です。
   PDF の書き出しには Edge か Chrome を使います
 - zip にその OS 用が無ければ、`marp` コマンド、`npx @marp-team/marp-cli` (Node.js が必要) の順に使います
-- zip の作り直し: `python tools/build_marp_zip.py` (`--version v4.5.1` で版を指定、
-  `--targets windows-x86_64,linux-x86_64` で対象を追加。取得したファイルは公開されている SHA-256 と照合します)。
-  ライセンス文だけを作り直すときは `--licenses-only` を付けます
 - スライドと同じフォルダの `assets/` に `background.png` (表紙の背景)・`logo.png` (ロゴ) が無ければ、
   既定の画像をコピーします。`placeholder.svg` (画像のレイアウト用の仮の画像) は、スライドが使っているときだけ
   書き出しのときにコピーします。既にあれば上書きしないので、同じ名前のファイルを置けば差し替えられます
@@ -270,9 +262,6 @@ slidepptx slides/発表.md       # 文字を編集できる PowerPoint
   `markdown.marp.themes` に登録します (拡張機能はワークスペースの中のテーマしか使えないため)。
   ワークスペースは、スライドの上のフォルダで `.vscode` があるところ、無ければ今のフォルダです。
   `settings.json` にコメントがあって読めないときは書き換えず、追加する値を表示します
-- 見本の PPTX は、元 (`example.md`・テーマ・画像・書き出しのスクリプト) を変えたら
-  `python tools/build_examples.py` で作り直します。元の SHA-256 を `examples/marp-slides-example.inputs` に記録し、
-  見本が古いとテストが失敗します
 
 ### 実行結果のコピー (`run`)
 
@@ -351,35 +340,3 @@ zip を配るときは、中のライセンス文も一緒に配ってくださ�
 - どちらの zip にも、入手先・版・SHA-256 などを書いた `BUILD_INFO.txt` があります。
   apply_patch はビルドのために codex の `Cargo.toml` を絞っているので、そのことも `modifications:` に書いています
   (Apache-2.0 の第 4 条 b。ソースは変更していません)
-- `THIRD_PARTY_LICENSES.txt` は `tools/build_apply_patch.py` と `tools/build_marp_zip.py` が作ります。
-  組み込まれた部品を、apply_patch は `cargo tree` (通常の依存。ビルド用・開発用・proc-macro を除く) で、
-  Marp CLI は同じ版の `package-lock.json` (実行時の依存と、rollup で取り込まれる依存) でたどり、
-  各部品に入っているライセンスファイルを集めます。ライセンスファイルが無い部品は、末尾の付録に
-  SPDX のライセンスの原文を載せます
-- 実行ファイルを変えずにライセンス文だけ作り直す: `python tools/build_apply_patch.py --licenses-only`
-  (`BUILD_INFO.txt` のコミットと Rust の版を使う。Linux で mingw-w64 が必要)、
-  `python tools/build_marp_zip.py --licenses-only` (`BUILD_INFO.txt` の版を使う)。どちらも git が必要です
-
-### リリース
-
-1. `pyproject.toml` の `version` を上げ、[CHANGELOG.md](CHANGELOG.md) のいちばん上にその版の節 (`## v<版> (<日付>)`) を書いて main に入れる
-2. GitHub の Actions で **Release** を選び、**Run workflow** で版 (例 `v0.1.0`) を入れて実行する。
-   main の最新のコミットにタグを付け、`tools/build_release.py` が作った配布用の zip と
-   CHANGELOG のその版の節を説明にしてリリースを作ります
-   (手元で zip だけ作るときは `python tools/build_release.py v0.1.0`。`dist/` にできます)
-3. 既にあるリリースの zip を作り直すときは、**Run workflow** で版を入れ、**rebuild** に印を付けます。
-   その版のタグのファイルから zip を作り直して置き換えます (zip に入れないものは今の決まりに従います)
-
-### 開発
-
-開発ルールは [CLAUDE.md](CLAUDE.md) を参照(pip + venv、pytest、ruff、pyrefly)。
-
-```powershell
-python -m venv .venv
-.venv\Scripts\activate          # macOS / Linux: source .venv/bin/activate
-pip install -e ".[dev]"
-ruff check . ; ruff format --check . ; pyrefly check ; pytest
-```
-
-GitHub Actions で Windows / macOS / Linux × Python 3.11 / 3.13 を実行します。
-Windows では実際のクリップボードへ書き込み、読み戻して日本語・絵文字が化けないことを確認します。

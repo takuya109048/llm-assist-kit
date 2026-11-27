@@ -94,3 +94,19 @@ def test_release_contains_licenses():
     ):
         assert name in files
     assert not any(f.startswith("examples/") for f in files)
+
+
+def test_release_does_not_mention_ai_tools_or_the_repository_host():
+    """配布するファイルには、キットを AI の開発ツールで作ったことや、
+    リポジトリの置き場所が分かる記述を入れない (CLAUDE.md などの開発用は配布しない)"""
+    files = build_release.release_files(build_release.tracked_files())
+    assert "CLAUDE.md" not in files and "DEVELOPMENT.md" not in files
+    assert ".gitignore" not in files
+    for name in files:
+        assert "claude" not in name.lower(), name
+        path = KIT / name
+        if path.suffix in {".zip", ".png", ".jpg", ".pptx", ".pdf"}:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace").lower()
+        for word in ("claude", "anthropic", "takuya109048/llm-assist-kit", "/releases"):
+            assert word not in text, (name, word)

@@ -4,6 +4,7 @@ name: Release
 # main の最新のコミットにタグを付け、配布用の zip を添えて GitHub のリリースを作る。
 # rebuild を付けると、既にある版のタグのファイルから zip を作り直して置き換える
 # (zip に入れないものは main の tools/build_release.py の決まりに従う)。
+# delete_releases に版を書くと (カンマ区切り)、その版のリリースを消す (タグは残す)。
 on:
   workflow_dispatch:
     inputs:
@@ -14,6 +15,10 @@ on:
         description: "既にあるリリースの zip を、その版のタグのファイルから作り直して置き換える"
         type: boolean
         default: false
+      delete_releases:
+        description: "リリースの後で消す古い版 (カンマ区切り。例 v0.1.0,v0.2.0。タグは残す)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -73,3 +78,18 @@ jobs:
           git worktree add --detach "$RUNNER_TEMP/kit-$tag" "$tag"
           python tools/build_release.py "$tag" --root "$RUNNER_TEMP/kit-$tag"
           gh release upload "$tag" dist/llm-assist-kit-"$tag".zip --clobber
+      - name: Delete old releases
+        if: ${{ inputs.delete_releases != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          DELETE: ${{ inputs.delete_releases }}
+        run: |
+          keep="v${VERSION#v}"
+          for tag in $(echo "$DELETE" | tr ',' ' '); do
+            if [ "$tag" = "$keep" ]; then
+              echo "今リリースした $tag は消しません" >&2
+              exit 1
+            fi
+            gh release delete "$tag" --yes
+          done
