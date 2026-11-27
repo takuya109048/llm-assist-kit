@@ -239,10 +239,185 @@ def test_cols_align_tops_and_center_the_taller_column():
     assert tops["要点 5"][1] == pytest.approx(464.8, abs=0.5)
 
 
-def test_overflowing_body_is_packed_to_the_top():
-    """本文が入りきらないときは、上下の真ん中にせず上から詰める (Chromium: 93.2)"""
-    page = ep.Layout(Path("."), []).slide(slides_of(UNEVEN_COLS)[1], 2, 2)
-    assert para_tops(page)["1"] == (108.0, pytest.approx(93.2, abs=0.5))
+def body_bottom(page) -> float:
+    """本文 (上寄せのテキストボックス) の下端"""
+    bottom = 0.0
+    for shape in page.shapes:
+        if isinstance(shape, ep.TextBox) and shape.anchor == "t":
+            y = shape.y + shape.inset_t
+            for p in shape.paras:
+                lines = ep.count_lines(p.runs, p.size, shape.w - p.mar_l)
+                y += p.space_before + lines * p.line + p.space_after
+            bottom = max(bottom, y)
+    return bottom
+
+
+# 本文が入りきらないスライド。Chromium (marp-core + 足した zoom の CSS) で測った値と比べる
+OVERFLOW = (
+    """---
+marp: true
+theme: kit-slides
+footer: "x"
+---
+
+## 1 カラムであふれる
+
+"""
+    + "".join(f"- 要点 {n}: 短めの文\n" for n in range(1, 15))
+    + """
+---
+
+<!-- _class: cols -->
+
+## 左だけあふれる
+
+### 左
+
+"""
+    + "".join(f"- 左の要点 {n}\n" for n in range(1, 16))
+    + """
+### 右
+
+- 右の要点 A
+- 右の要点 B
+
+---
+
+<!-- _class: image-right -->
+
+## 画像の横であふれる
+
+### 説明
+
+"""
+    + "".join(f"- 要点 {n}: 短めの文\n" for n in range(1, 15))
+    + """
+![](assets/placeholder.svg)
+
+---
+
+## 入りきらない
+
+"""
+    + "".join(f"- {n}\n" for n in range(1, 41))
+)
+
+
+def overflow_pages() -> tuple[list, ep.Layout]:
+    layout = ep.Layout(SKILL, [])
+    slides = slides_of(OVERFLOW)
+    return [layout.slide(s, n, len(slides)) for n, s in enumerate(slides, 1)], layout
+
+
+def test_overflowing_body_shrinks_to_fit():
+    """入りきらない本文は、入るまで文字を小さくする (CSS の zoom と同じ倍率。
+    位置は Chromium で測った値: 要点 1 は (101.8, 94.9)、要点 14 は 615.3、下端は 649.6)"""
+    pages, layout = overflow_pages()
+    assert layout.fits[1] == {"body": 0.88}
+    tops = para_tops(pages[0])
+    assert tops["要点 1: 短め"] == (
+        pytest.approx(101.8, abs=0.5),
+        pytest.approx(94.9, abs=0.5),
+    )
+    assert tops["要点 14: 短"][1] == pytest.approx(615.3, abs=0.5)
+    sizes = {
+        round(p.size, 2)
+        for s in pages[0].shapes
+        if isinstance(s, ep.TextBox)
+        for p in s.paras
+    }
+    assert sizes == {18, round(26 * 0.88, 2), 36}  # フッター・本文・タイトル
+    assert body_bottom(pages[0]) <= ep.BODY_BOTTOM + 0.5
+
+
+def test_only_the_overflowing_column_shrinks():
+    """cols は入りきらないカラムだけを小さくし、上端は 2 つのカラムでそろえる
+    (Chromium: 小見出しはどちらも 88.3、右の要点 A は 134.8、左の要点 15 は 621.3)"""
+    pages, layout = overflow_pages()
+    assert layout.fits[2] == {"left": 0.78}
+    tops = para_tops(pages[1])
+    assert tops["左"][1] == tops["右"][1] == pytest.approx(88.3, abs=0.5)
+    assert tops["右の要点 A"] == (724.0, pytest.approx(134.8, abs=0.5))
+    assert tops["左の要点 15"][1] == pytest.approx(621.3, abs=0.5)
+    assert {
+        p.size
+        for s in pages[1].shapes
+        if isinstance(s, ep.TextBox) and s.x > 600
+        for p in s.paras
+    } == {30, 26}  # 右はそのまま
+    assert body_bottom(pages[1]) <= ep.BODY_BOTTOM + 0.5
+
+
+def test_text_beside_image_shrinks_to_fit():
+    pages, layout = overflow_pages()
+    assert layout.fits[3] == {"body": 0.82}
+    assert body_bottom(pages[2]) <= ep.BODY_BOTTOM + 0.5
+    [image] = [s for s in pages[2].shapes if isinstance(s, ep.Picture)]
+    assert image.w == pytest.approx(ep.IMAGE_W)  # 画像は小さくしない
+
+
+def test_body_that_does_not_fit_at_half_size_is_packed_to_the_top():
+    """50% にしても入らなければ、50% で上から詰め、警告を出す (Chromium: 90.6)"""
+    pages, layout = overflow_pages()
+    assert layout.fits[4] == {"body": ep.MIN_FIT}
+    assert para_tops(pages[3])["1"][1] == pytest.approx(90.6, abs=0.5)
+    assert any(w.startswith("スライド 4: 本文が多すぎて") for w in layout.warn)
+    assert not any(w.startswith("スライド 1") for w in layout.warn)
+
+
+def test_slides_that_fit_are_not_changed():
+    page = ep.Layout(Path("."), []).slide(slides_of(UNEVEN_COLS)[0], 1, 2)
+    assert {
+        p.size for s in page.shapes if isinstance(s, ep.TextBox) for p in s.paras
+    } == {
+        26,
+        30,
+        36,
+        18,
+    }
+
+
+def test_scale_shape_scales_tables_and_drawings_around_the_origin():
+    cell = ep.Cell([ep.Para([ep.Run("a")], 22, 33)], None, 32, 8)
+    other = ep.Cell([], None, 32, 8)
+    table = ep.TableShape(100, 200, [50, 70], [40], [[cell, other]])
+    ep.scale_shape(table, 100, 100, 0.5)
+    assert (table.y, table.col_widths, table.row_heights) == (150, [25, 35], [20])
+    assert (cell.pad_x, cell.pad_y, cell.paras[0].size) == (16, 4, 11)
+    geom = ep.Geom("path", 300, 300, 100, 50, stroke_w=2, path=[("M", [(10, 20)])])
+    drawing = ep.Drawing(300, 300, 100, 50, [geom])
+    ep.scale_shape(drawing, 100, 100, 0.5)
+    assert (drawing.x, drawing.w, geom.x, geom.y, geom.w) == (200, 50, 200, 200, 50)
+    assert (geom.stroke_w, geom.path) == (1, [("M", [(5, 10)])])
+
+
+def test_fit_markdown_adds_scoped_zoom_to_the_overflowing_slides(tmp_path: Path):
+    source = tmp_path / "s.md"
+    text = OVERFLOW.replace("## 入りきらない", "```\n---\n```\n\n## 入りきらない")
+    source.write_text(text, encoding="utf-8")
+    fitted, warnings = ep.fit_markdown(source)
+    assert fitted is not None
+    chunks = ep.split_slides(ep.split_front_matter(fitted)[1])
+    assert len(chunks) == 4  # コードブロックの中の --- では分けない
+    assert (
+        chunks[0]
+        .rstrip()
+        .endswith(
+            "<style scoped>section > :not(h2, header, footer, p:has(> img:only-child))"
+            " { zoom: 0.88; }</style>"
+        )
+    )
+    assert "h3 ~ h3, h3 ~ h3 ~ *) { zoom: 0.78; }" in chunks[1]
+    assert "zoom: 0.82" in chunks[2]
+    assert chunks[3].rstrip().endswith("{ zoom: 0.5; }</style>")
+    assert fitted.startswith("---\nmarp: true")  # フロントマターはそのまま
+    assert [w[:7] for w in warnings] == ["スライド 4:"]
+
+
+def test_fit_markdown_returns_none_when_everything_fits(tmp_path: Path):
+    source = tmp_path / "s.md"
+    source.write_text(UNEVEN_COLS.split("---\n\n## あふれる")[0], encoding="utf-8")
+    assert ep.fit_markdown(source) == (None, [])
 
 
 def test_centered_top():

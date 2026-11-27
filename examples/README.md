@@ -43,7 +43,7 @@ PS> ctx --list
        skill  apply-patch  (C:/tools/llm-assist-kit/skills/apply-patch/SKILL.md)
        skill  marp-slides  (C:/tools/llm-assist-kit/skills/marp-slides/SKILL.md)
 
-16 ファイル / スキル 2 / 推定 10,484 トークン
+16 ファイル / スキル 2 / 推定 10,586 トークン
 ```
 
 ## `.ctxignore` の全パターン
