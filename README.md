@@ -197,7 +197,8 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
   (Windows x64 / Linux x64 用にビルドしたもの。Apache-2.0) で行います。
   初回に `skills/apply-patch/.bin/` に取り出して使います
 - zip の作り直し: `python tools/build_apply_patch.py` (Linux で、Rust と mingw-w64 が必要。
-  ビルド元のコミットは zip の `BUILD_INFO.txt` に記録されます)
+  ビルド元のコミットは zip の `BUILD_INFO.txt` に記録されます)。
+  ライセンス文だけを作り直すときは `--licenses-only` を付けます ([同梱しているソフトのライセンス](#同梱しているソフトのライセンス))
 
 ### スライドを作る (marp-slides スキル)
 
@@ -252,7 +253,8 @@ slidepptx slides/発表.md       # 文字を編集できる PowerPoint
   PDF の書き出しには Edge か Chrome を使います
 - zip にその OS 用が無ければ、`marp` コマンド、`npx @marp-team/marp-cli` (Node.js が必要) の順に使います
 - zip の作り直し: `python tools/build_marp_zip.py` (`--version v4.5.1` で版を指定、
-  `--targets windows-x86_64,linux-x86_64` で対象を追加。取得したファイルは公開されている SHA-256 と照合します)
+  `--targets windows-x86_64,linux-x86_64` で対象を追加。取得したファイルは公開されている SHA-256 と照合します)。
+  ライセンス文だけを作り直すときは `--licenses-only` を付けます
 - スライドと同じフォルダの `assets/` に `background.png` (表紙の背景)・`logo.png` (ロゴ) が無ければ、
   既定の画像をコピーします。`placeholder.svg` (画像のレイアウト用の仮の画像) は、スライドが使っているときだけ
   書き出しのときにコピーします。既にあれば上書きしないので、同じ名前のファイルを置けば差し替えられます
@@ -323,6 +325,28 @@ my-project/
 ````
 
 Markdown 内に ``` を含むファイルは、より長いフェンス (````) で囲むので崩れません。
+
+### 同梱しているソフトのライセンス
+
+次の 2 つの zip には、他の人が作ったソフトの実行ファイルが入っています。
+zip を配るときは、中のライセンス文も一緒に配ってください (zip ごと配れば満たせます)。
+
+| zip | 中身 | ライセンス | zip に入れているライセンス文 |
+| --- | --- | --- | --- |
+| [`apply_patch.zip`](skills/apply-patch/apply_patch.zip) | [openai/codex](https://github.com/openai/codex) の `apply_patch` をビルドしたもの | Apache-2.0 | `LICENSE`・`NOTICE` (codex)、`THIRD_PARTY_LICENSES.txt` (組み込まれた Rust のクレート、Rust 標準ライブラリ、Windows 版の mingw-w64 の CRT と winpthreads) |
+| [`marp.zip`](skills/marp-slides/marp.zip) | [Marp CLI](https://github.com/marp-team/marp-cli) の公式の単体版 | MIT | `LICENSE` (Marp CLI)、`THIRD_PARTY_LICENSES.txt` (組み込まれた Node.js と npm パッケージ) |
+
+- どちらの zip にも、入手先・版・SHA-256 などを書いた `BUILD_INFO.txt` があります。
+  apply_patch はビルドのために codex の `Cargo.toml` を絞っているので、そのことも `modifications:` に書いています
+  (Apache-2.0 の第 4 条 b。ソースは変更していません)
+- `THIRD_PARTY_LICENSES.txt` は `tools/build_apply_patch.py` と `tools/build_marp_zip.py` が作ります。
+  組み込まれた部品を、apply_patch は `cargo tree` (通常の依存。ビルド用・開発用・proc-macro を除く) で、
+  Marp CLI は同じ版の `package-lock.json` (実行時の依存と、rollup で取り込まれる依存) でたどり、
+  各部品に入っているライセンスファイルを集めます。ライセンスファイルが無い部品は、末尾の付録に
+  SPDX のライセンスの原文を載せます
+- 実行ファイルを変えずにライセンス文だけ作り直す: `python tools/build_apply_patch.py --licenses-only`
+  (`BUILD_INFO.txt` のコミットと Rust の版を使う。Linux で mingw-w64 が必要)、
+  `python tools/build_marp_zip.py --licenses-only` (`BUILD_INFO.txt` の版を使う)。どちらも git が必要です
 
 ### 開発
 

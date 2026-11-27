@@ -34,4 +34,4 @@ ignore = ["E501"]
 
 [tool.pyrefly]
 project-includes = ["ctx.py", "install.py", "commands", "tests", "skills", "tools"]
-search-path = [".", "commands"]
+search-path = [".", "commands", "tools"]
