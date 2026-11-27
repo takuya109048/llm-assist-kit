@@ -1,6 +1,6 @@
 # examples/marp-slides-example.pptx を作った元 (tools/build_examples.py が書く)
 758e5a1efd4d9e806e87b3c4786a989b2cea51e6afcb9b44cb7656b89fcb2059  skills/marp-slides/example.md
-305733bb20500fdade3d2345f3d9aec46f8b0e2a5d72707fe225d32d05bc15e2  skills/marp-slides/theme.css
+ec4ab42f5bb143745a4c773fbce114ae646b7d13337742750a644d3edc2e744a  skills/marp-slides/theme.css
 927ccc50ff5e16ce929b7e2ee122e1d833f595128ca877b4760a75504b36f176  skills/marp-slides/build.py
 87e35e170f5525b2222a27c2a6611defa5f228e5dbced9041cbf0e81e6ead0d6  skills/marp-slides/editable_pptx.py
 724322d3be7cbf0b3d9fc5a266fa997eb635c31b4328d448e7f5220ed42c1b07  skills/marp-slides/assets/background.png
