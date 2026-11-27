@@ -27,6 +27,13 @@ poetry、conda は使わないでください。ロックファイルはあり�
   (`THIRD_PARTY_LICENSES.txt`) を入れる。ビルドスクリプトが `tools/third_party.py` で作る。
   実行ファイルを変えずにライセンス文だけ作り直すときは `--licenses-only` を付ける。
 
+## リリース
+
+- 版は `pyproject.toml` の `version` (`MAJOR.MINOR.PATCH`) で、タグは `v` を付ける (`v0.1.0`)。
+- リリースの前に `CHANGELOG.md` のいちばん上に `## v<版> (<日付>)` の節を書く。リリースの説明になる。
+- リリースは `.github/workflows/release.yml` を手動で実行して作る (main のみ)。配布用の zip は
+  `tools/build_release.py` が作り、`tests/`・`tools/`・`.github/` は入れない。
+
 ## コードの実行
 
 すべて有効化した `.venv` の中で実行するか、`.venv/bin/` 経由でツールを呼ぶ

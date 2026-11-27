@@ -1,0 +1,55 @@
+name: Release
+
+# Actions の画面 (または API) から手動で起動する。
+# main の最新のコミットにタグを付け、配布用の zip を添えて GitHub のリリースを作る。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "リリースする版 (例 v0.1.0。pyproject.toml の version と同じにする)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Check
+        run: |
+          ruff check .
+          ruff format --check .
+          pyrefly check
+          pytest -q
+      - name: Build
+        env:
+          VERSION: ${{ inputs.version }}
+        run: python tools/build_release.py "$VERSION"
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          tag="v${VERSION#v}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "リリース $tag はもうあります" >&2
+            exit 1
+          fi
+          gh release create "$tag" dist/llm-assist-kit-"$tag".zip \
+            --target "$GITHUB_SHA" \
+            --title "$tag" \
+            --notes-file dist/release-notes.md
