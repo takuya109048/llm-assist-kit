@@ -278,9 +278,9 @@ def test_image_layout_places_the_svg_figure():
     """image クラスの図 (1100x440 の SVG) は、小見出しと説明の間 (高さ 470.5) の真ん中に、
     そのままの大きさで置く (Chromium: x 90、y 152.8)"""
     page = pages_of()[8]
-    [pic] = [s for s in page.shapes if isinstance(s, ep.Picture) and s.name == "図"]
-    assert pic.path.name == "example-flow.svg"
-    assert (round(pic.x, 1), round(pic.y, 1), pic.w, pic.h) == (90.0, 152.8, 1100, 440)
+    [fig] = [s for s in page.shapes if s.name == "図"]
+    assert isinstance(fig, ep.Drawing)  # PowerPoint の図形のグループになる
+    assert (round(fig.x, 1), round(fig.y, 1), fig.w, fig.h) == (90.0, 152.8, 1100, 440)
 
 
 @pytest.mark.parametrize(
@@ -417,7 +417,8 @@ def test_slides_have_editable_text_tables_and_lists(example_pptx: Path):
 
 
 def test_images_are_embedded(example_pptx: Path):
-    """PNG (背景・ロゴ) はそのまま、SVG (仮の画像) は代わりの PNG を付けて入れる"""
+    """PNG (背景・ロゴ) はそのまま、SVG (仮の画像) は代わりの PNG を付けて入れる。
+    SVG の図 (example-flow.svg) は図形になるので、画像としては入らない"""
     with zipfile.ZipFile(example_pptx) as zf:
         names = zf.namelist()
         cover = zf.read("ppt/slides/slide1.xml").decode("utf-8")
@@ -435,7 +436,6 @@ def test_images_are_embedded(example_pptx: Path):
         "ppt/media/image1.png",
         "ppt/media/image2.png",
         "ppt/media/image3.svg",
-        "ppt/media/image4.svg",
     ]
 
 

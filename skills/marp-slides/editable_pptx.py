@@ -15,12 +15,15 @@
 - 位置と大きさは theme.css (と Marp の default テーマ) の寸法を、そのまま
   1px = 1/96 インチで写す。行の高さは「固定値」で指定し、箱の内側の余白は 0 にする。
   折り返しの位置だけは文字の幅を見積もって計算するので、ブラウザと 1 文字程度ずれることがある
-- 画像は SVG をそのまま埋め込む (PowerPoint 2016 以降で表示できる)。PNG / JPEG / GIF も使える
+- 本文の SVG の図 (SKILL.md の書き方のもの) は、PowerPoint の図形・矢印・テキストのグループに
+  置き換える。置き換えられない SVG と仮の画像は SVG のまま埋め込む (PowerPoint 2016 以降で表示
+  できる)。PNG / JPEG / GIF も使える
 """
 
 from __future__ import annotations
 
 import argparse
+import math
 import re
 import struct
 import sys
@@ -773,6 +776,7 @@ class TextBox:
     fill: str | None = None
     border: str | None = None
     name: str = "テキスト"
+    wrap: bool = True  # False なら折り返さない (SVG の図の文字)
 
 
 @dataclass
@@ -815,7 +819,56 @@ class TableShape:
     name: str = "表"
 
 
-Shape = TextBox | Picture | Rect | TableShape
+@dataclass
+class Geom:
+    """SVG の図の 1 つの図形 (四角・円・線・自由な形)。位置はスライドの px
+
+    kind は "rect" / "roundRect" / "ellipse" / "line" (直線のコネクタ) / "path" (フリーフォーム)。
+    path の点は (x, y) からの相対位置で、命令は "M" "L" "C" "Q" "Z"。
+    """
+
+    kind: str
+    x: float
+    y: float
+    w: float
+    h: float
+    fill: str | None = None
+    stroke: str | None = None
+    stroke_w: float = 1.0
+    dash: bool = False
+    fill_alpha: float = 1.0
+    stroke_alpha: float = 1.0
+    radius: float = 0.0  # roundRect の角の丸み (px)
+    path: list[tuple[str, list[tuple[float, float]]]] = field(default_factory=list)
+    flip_h: bool = False  # line: 右から左へ引く線
+    flip_v: bool = False  # line: 下から上へ引く線
+    head: str | None = None  # 始点の矢印の大きさ ("sm" / "med" / "lg")
+    tail: str | None = None  # 終点の矢印の大きさ
+    glue_start: tuple[Geom, int] | None = None  # 線の始点をつなぐ図形と接続点の番号
+    glue_end: tuple[Geom, int] | None = None
+    paras: list[Para] = field(default_factory=list)  # 図形の中の文字
+    align: str = "ctr"
+    inset_l: float = 0.0
+    inset_r: float = 0.0
+    inset_t: float = 0.0
+    wrap: bool = True
+    name: str = "図形"
+
+
+@dataclass
+class Drawing:
+    """SVG の図を PowerPoint の図形に置き換えたもの (1 つのグループ)"""
+
+    x: float
+    y: float
+    w: float
+    h: float
+    items: list[Geom | TextBox]
+    alt: str = ""
+    name: str = "図"
+
+
+Shape = TextBox | Picture | Rect | TableShape | Drawing
 
 
 @dataclass
@@ -1071,6 +1124,786 @@ def cover_crop(
     return 0.0, cut, 0.0, cut
 
 
+# ---- SVG の図を PowerPoint の図形にする ----
+#
+# SKILL.md の決まりで作った図 (rect・circle・ellipse・line・polyline・polygon・path・text と g) は、
+# 画像ではなく PowerPoint の図形・矢印・文字の 1 つのグループにして、そのまま編集できるようにする。
+# 箱の中の文字は箱の図形の文字に、矢印 (marker-end / marker-start、または線の先の三角形) は
+# 線の矢じりにし、箱の辺の真ん中に届く直線は箱につなぐ (箱を動かすと線がついてくる)。
+# 置き換えられないもの (<image>・グラデーション・回転など) があれば、図全体を画像のまま入れる。
+
+SVG_TEXT_LINE = 1.2  # 図の文字の行の高さ (文字の大きさに対する割合)
+# 行の上端からベースラインまで (文字の大きさに対する割合)。メイリオ (ascent 1.0577、
+# descent 0.4423) を行の高さ 1.2 の真ん中に置いたときの値
+SVG_TEXT_BASELINE = SVG_TEXT_LINE / 2 + (1.0577 - 0.4423) / 2
+SVG_GLUE_DISTANCE = 8.0  # 線の端と箱の辺の真ん中がこれより近ければつなぐ (px)
+SVG_INHERITED = (
+    "fill",
+    "stroke",
+    "stroke-width",
+    "stroke-dasharray",
+    "fill-opacity",
+    "stroke-opacity",
+    "font-size",
+    "font-weight",
+    "font-style",
+    "text-anchor",
+    "dominant-baseline",
+    "marker-start",
+    "marker-end",
+    "color",
+)
+# SVG (CSS) の色の名前。<span> の色 (SPAN_COLORS) とは別に、ブラウザと同じ値にする
+SVG_COLORS = {
+    "black": "000000",
+    "white": "FFFFFF",
+    "red": "FF0000",
+    "green": "008000",
+    "blue": "0000FF",
+    "yellow": "FFFF00",
+    "orange": "FFA500",
+    "purple": "800080",
+    "gray": "808080",
+    "grey": "808080",
+    "silver": "C0C0C0",
+    "lightgray": "D3D3D3",
+    "lightgrey": "D3D3D3",
+    "darkgray": "A9A9A9",
+    "darkgrey": "A9A9A9",
+    "navy": "000080",
+    "darkblue": "00008B",
+    "steelblue": "4682B4",
+    "skyblue": "87CEEB",
+    "lightblue": "ADD8E6",
+    "teal": "008080",
+    "darkgreen": "006400",
+    "maroon": "800000",
+    "darkred": "8B0000",
+}
+SVG_NUMBER_RE = re.compile(r"[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?")
+SVG_PATH_TOKEN_RE = re.compile(
+    r"([MmLlHhVvCcSsQqTtAaZz])|([-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?)"
+)
+
+Point = tuple[float, float]
+Transform = tuple[
+    float, float, float, float
+]  # (sx, sy, tx, ty): (x, y) -> (sx*x+tx, sy*y+ty)
+
+
+class SvgError(Exception):
+    """PowerPoint の図形にできない SVG (理由を持つ)"""
+
+
+@dataclass
+class SvgText:
+    """図の 1 行の文字 (位置はスライドの px、y はベースライン)"""
+
+    x: float
+    y: float
+    anchor: str  # "start" / "middle" / "end"
+    size: float
+    color: str
+    runs: list[Run]
+
+    @property
+    def width(self) -> float:
+        return max_content_width(self.runs, self.size) * WIDTH_SLACK
+
+    @property
+    def left(self) -> float:
+        offset = {"middle": 0.5, "end": 1.0}.get(self.anchor, 0.0)
+        return self.x - self.width * offset
+
+    @property
+    def top(self) -> float:
+        return self.y - SVG_TEXT_BASELINE * self.size
+
+    def para(self, align: str) -> Para:
+        return Para(
+            self.runs, self.size, self.size * SVG_TEXT_LINE, self.color, align=align
+        )
+
+
+def svg_tag(el: ElementTree.Element) -> str:
+    return el.tag.rsplit("}", 1)[-1] if isinstance(el.tag, str) else ""
+
+
+def svg_numbers(value: str | None) -> list[float]:
+    return [float(v) for v in SVG_NUMBER_RE.findall(value or "")]
+
+
+def svg_length(value: str | None, default: float = 0.0, em: float = 16.0) -> float:
+    if value is None or not value.strip():
+        return default
+    value = value.strip()
+    if value.endswith("%"):
+        raise SvgError("% の長さ")
+    if value.endswith("em"):
+        return float(value[:-2]) * em
+    length = css_length(value)
+    if length is None:
+        raise SvgError(f"長さ {value}")
+    return length
+
+
+def svg_attrs(el: ElementTree.Element) -> dict[str, str]:
+    """要素の属性 (style="fill: ..." の中も属性として読む)"""
+    attrs = {k.rsplit("}", 1)[-1]: v for k, v in el.attrib.items()}
+    for item in attrs.pop("style", "").split(";"):
+        if ":" in item:
+            key, value = item.split(":", 1)
+            attrs[key.strip()] = value.strip()
+    return attrs
+
+
+def svg_transform(value: str | None) -> Transform:
+    """transform を (sx, sy, tx, ty) にする。回転・斜めの変形は図形にできない"""
+    sx, sy, tx, ty = 1.0, 1.0, 0.0, 0.0
+    if not value:
+        return sx, sy, tx, ty
+    items = re.findall(r"([a-zA-Z]+)\s*\(([^)]*)\)", value)
+    for name, args in reversed(items):  # 右に書いたものから順に当てる
+        nums = svg_numbers(args)
+        if name == "translate" and nums:
+            ax, ay, bx, by = 1.0, 1.0, nums[0], nums[1] if len(nums) > 1 else 0.0
+        elif name == "scale" and nums:
+            ax, ay, bx, by = nums[0], nums[1] if len(nums) > 1 else nums[0], 0.0, 0.0
+        elif name == "matrix" and len(nums) == 6 and nums[1] == 0 and nums[2] == 0:
+            ax, ay, bx, by = nums[0], nums[3], nums[4], nums[5]
+        elif name == "rotate" and nums and nums[0] % 360 == 0:
+            continue
+        else:
+            raise SvgError(f"変形 {name}")
+        sx, sy, tx, ty = ax * sx, ay * sy, ax * tx + bx, ay * ty + by
+    if sx <= 0 or sy <= 0:
+        raise SvgError("反転・0 倍の変形")
+    return sx, sy, tx, ty
+
+
+def compose(outer: Transform, inner: Transform) -> Transform:
+    osx, osy, otx, oty = outer
+    isx, isy, itx, ity = inner
+    return osx * isx, osy * isy, osx * itx + otx, osy * ity + oty
+
+
+def apply(tf: Transform, p: Point) -> Point:
+    return tf[0] * p[0] + tf[2], tf[1] * p[1] + tf[3]
+
+
+def svg_color(value: str, current: str | None = None) -> str | None:
+    value = value.strip().lower()
+    if value in ("none", "transparent"):
+        return None
+    if value.startswith("url("):
+        raise SvgError("グラデーション・模様の塗り")
+    if value == "currentcolor":
+        return svg_color(current or "black")
+    if value.startswith("#") or value.startswith("rgb"):
+        color = parse_color(value)
+    else:
+        color = SVG_COLORS.get(value)
+    if color is None:
+        raise SvgError(f"色 {value}")
+    return color
+
+
+def arc_to_cubics(
+    p0: Point, rx: float, ry: float, angle: float, large: bool, sweep: bool, p1: Point
+) -> list[list[Point]]:
+    """円弧 (path の A) を 3 次ベジェ曲線に分ける (SVG 仕様の F.6 の方法)"""
+    if p0 == p1:
+        return []
+    if rx == 0 or ry == 0:
+        return [[p0, p1, p1]]
+    rx, ry = abs(rx), abs(ry)
+    phi = math.radians(angle % 360)
+    cos, sin = math.cos(phi), math.sin(phi)
+    dx, dy = (p0[0] - p1[0]) / 2, (p0[1] - p1[1]) / 2
+    x1 = cos * dx + sin * dy
+    y1 = -sin * dx + cos * dy
+    lam = (x1 / rx) ** 2 + (y1 / ry) ** 2
+    if lam > 1:
+        rx, ry = rx * math.sqrt(lam), ry * math.sqrt(lam)
+    num = rx * rx * ry * ry - rx * rx * y1 * y1 - ry * ry * x1 * x1
+    den = rx * rx * y1 * y1 + ry * ry * x1 * x1
+    coef = math.sqrt(max(num, 0) / den) if den else 0.0
+    if large == sweep:
+        coef = -coef
+    cx1, cy1 = coef * rx * y1 / ry, -coef * ry * x1 / rx
+    cx = cos * cx1 - sin * cy1 + (p0[0] + p1[0]) / 2
+    cy = sin * cx1 + cos * cy1 + (p0[1] + p1[1]) / 2
+
+    def ang(ux: float, uy: float, vx: float, vy: float) -> float:
+        return math.atan2(ux * vy - uy * vx, ux * vx + uy * vy)
+
+    t1 = ang(1, 0, (x1 - cx1) / rx, (y1 - cy1) / ry)
+    dt = ang((x1 - cx1) / rx, (y1 - cy1) / ry, (-x1 - cx1) / rx, (-y1 - cy1) / ry)
+    if not sweep and dt > 0:
+        dt -= 2 * math.pi
+    elif sweep and dt < 0:
+        dt += 2 * math.pi
+    n = max(1, math.ceil(abs(dt) / (math.pi / 2) - 1e-9))
+    step = dt / n
+    k = 4 / 3 * math.tan(step / 4)
+
+    def point(t: float, d: float = 0.0) -> Point:
+        if d:
+            ex, ey = -rx * math.sin(t), ry * math.cos(t)
+        else:
+            ex, ey = rx * math.cos(t), ry * math.sin(t)
+        return cos * ex - sin * ey + (0 if d else cx), sin * ex + cos * ey + (
+            0 if d else cy
+        )
+
+    curves = []
+    for i in range(n):
+        a, b = t1 + i * step, t1 + (i + 1) * step
+        pa, pb = point(a), point(b)
+        da, db = point(a, 1), point(b, 1)
+        c1 = (pa[0] + k * da[0], pa[1] + k * da[1])
+        c2 = (pb[0] - k * db[0], pb[1] - k * db[1])
+        curves.append([c1, c2, pb])
+    curves[-1][2] = p1
+    return curves
+
+
+def parse_path(d: str) -> list[tuple[str, list[Point]]]:
+    """path の d を、絶対座標の "M" "L" "C" "Q" "Z" の並びにする"""
+    tokens = SVG_PATH_TOKEN_RE.findall(d)
+    out: list[tuple[str, list[Point]]] = []
+    i = 0
+    cmd = ""
+    cur: Point = (0.0, 0.0)
+    start: Point = (0.0, 0.0)
+    last_ctrl: Point | None = None
+    last_kind = ""
+
+    def nums(n: int) -> list[float]:
+        nonlocal i
+        values = []
+        for _ in range(n):
+            if i >= len(tokens) or not tokens[i][1]:
+                raise SvgError("path の書き方")
+            values.append(float(tokens[i][1]))
+            i += 1
+        return values
+
+    while i < len(tokens):
+        if tokens[i][0]:
+            cmd = tokens[i][0]
+            i += 1
+        elif not cmd:
+            raise SvgError("path の書き方")
+        rel = cmd.islower()
+        c = cmd.upper()
+        ox, oy = cur if rel else (0.0, 0.0)
+        if c == "Z":
+            out.append(("Z", []))
+            cur = start
+            last_ctrl, last_kind = None, "Z"
+            continue
+        if c == "M":
+            x, y = nums(2)
+            cur = start = (ox + x, oy + y)
+            out.append(("M", [cur]))
+            cmd = "l" if rel else "L"  # M の後に続く数は L
+            last_ctrl, last_kind = None, "M"
+        elif c in ("L", "H", "V"):
+            if c == "L":
+                x, y = nums(2)
+                cur = (ox + x, oy + y)
+            elif c == "H":
+                (x,) = nums(1)
+                cur = (ox + x if rel else x, cur[1])
+            else:
+                (y,) = nums(1)
+                cur = (cur[0], oy + y if rel else y)
+            out.append(("L", [cur]))
+            last_ctrl, last_kind = None, "L"
+        elif c in ("C", "S"):
+            if c == "C":
+                x1, y1, x2, y2, x, y = nums(6)
+                c1 = (ox + x1, oy + y1)
+            else:
+                x2, y2, x, y = nums(4)
+                c1 = (
+                    (2 * cur[0] - last_ctrl[0], 2 * cur[1] - last_ctrl[1])
+                    if last_ctrl and last_kind == "C"
+                    else cur
+                )
+            c2 = (ox + x2, oy + y2)
+            cur = (ox + x, oy + y)
+            out.append(("C", [c1, c2, cur]))
+            last_ctrl, last_kind = c2, "C"
+        elif c in ("Q", "T"):
+            if c == "Q":
+                x1, y1, x, y = nums(4)
+                q = (ox + x1, oy + y1)
+            else:
+                x, y = nums(2)
+                q = (
+                    (2 * cur[0] - last_ctrl[0], 2 * cur[1] - last_ctrl[1])
+                    if last_ctrl and last_kind == "Q"
+                    else cur
+                )
+            cur = (ox + x, oy + y)
+            out.append(("Q", [q, cur]))
+            last_ctrl, last_kind = q, "Q"
+        elif c == "A":
+            rx, ry, angle, large, sweep, x, y = nums(7)
+            end = (ox + x, oy + y)
+            for curve in arc_to_cubics(
+                cur, rx, ry, angle, bool(large), bool(sweep), end
+            ):
+                out.append(("C", curve))
+            cur = end
+            last_ctrl, last_kind = None, "A"
+        else:
+            raise SvgError(f"path の {cmd}")
+    return out
+
+
+def arrow_size(ratio: float) -> str:
+    """矢じりの大きさ (線の太さの何倍か) を PowerPoint の大きさにする"""
+    if ratio < 2.5:
+        return "sm"
+    if ratio < 4:
+        return "med"
+    return "lg"
+
+
+class SvgConverter:
+    """SVG を、スライドの (x, y, w, h) に置いた図形の一覧にする"""
+
+    def __init__(
+        self, root: ElementTree.Element, box: tuple[float, float, float, float]
+    ):
+        if svg_tag(root) != "svg":
+            raise SvgError("<svg> ではない")
+        x, y, w, h = box
+        vb = svg_numbers(root.get("viewBox"))
+        if len(vb) == 4 and vb[2] > 0 and vb[3] > 0:
+            minx, miny, vw, vh = vb
+        else:
+            minx, miny = 0.0, 0.0
+            vw, vh = svg_size(ElementTree.tostring(root))
+        scale = min(w / vw, h / vh)  # preserveAspectRatio は既定 (xMidYMid meet)
+        ox = x + (w - vw * scale) / 2 - minx * scale
+        oy = y + (h - vh * scale) / 2 - miny * scale
+        self.root = root
+        self.base: Transform = (scale, scale, ox, oy)
+        self.canvas = (x, y, w, h)
+        self.markers: dict[str, tuple[float, bool]] = {}  # id -> (幅, 線の太さが単位か)
+        self.items: list[Geom | SvgText] = []
+        self.texts: dict[int, list[SvgText]] = {}  # 図形 (id) -> 中の文字
+
+    # -- 読む --
+
+    def convert(self) -> list[Geom | TextBox]:
+        for marker in self.root.iter():
+            if svg_tag(marker) == "marker" and marker.get("id"):
+                width = svg_length(marker.get("markerWidth"), 3.0)
+                stroke_units = marker.get("markerUnits") != "userSpaceOnUse"
+                self.markers[marker.get("id", "")] = (width, stroke_units)
+        self.walk(self.root, {}, self.base)
+        self.merge_arrowheads()
+        self.place_texts()
+        result: list[Geom | TextBox] = []
+        for item in self.items:
+            if isinstance(item, SvgText):
+                result.append(self.free_text(item))
+            else:
+                self.finish(item)
+                result.append(item)
+        for item in result:
+            if isinstance(item, Geom) and item.kind == "line":
+                self.glue(item, result)
+        return result
+
+    def walk(
+        self, el: ElementTree.Element, inherited: dict[str, str], tf: Transform
+    ) -> None:
+        tag = svg_tag(el)
+        if tag in ("title", "desc", "metadata", "defs", "marker", ""):
+            return
+        attrs = dict(inherited)
+        own = svg_attrs(el)
+        opacity = float(attrs.get("_opacity", "1")) * float(own.pop("opacity", "1"))
+        attrs.update(own)
+        attrs["_opacity"] = str(opacity)
+        if attrs.get("display") == "none" or attrs.get("visibility") == "hidden":
+            return
+        if el is not self.root:
+            tf = compose(tf, svg_transform(own.get("transform")))
+        if tag in ("svg", "g", "a") and (tag != "svg" or el is self.root):
+            inherit = {
+                k: v for k, v in attrs.items() if k in SVG_INHERITED or k == "_opacity"
+            }
+            for child in el:
+                self.walk(child, inherit, tf)
+        elif tag in ("rect", "circle", "ellipse"):
+            self.box(tag, attrs, tf)
+        elif tag in ("line", "polyline", "polygon", "path"):
+            self.lines(tag, attrs, tf)
+        elif tag == "text":
+            self.text(el, attrs, tf)
+        else:
+            raise SvgError(f"<{tag}>")
+
+    def style(self, attrs: dict[str, str], tf: Transform, fill_default: str) -> Geom:
+        current = attrs.get("color")
+        opacity = float(attrs.get("_opacity", "1"))
+        stroke = svg_color(attrs.get("stroke", "none"), current)
+        dash = attrs.get("stroke-dasharray", "none").strip()
+        return Geom(
+            "rect",
+            0,
+            0,
+            0,
+            0,
+            fill=svg_color(attrs.get("fill", fill_default), current),
+            stroke=stroke,
+            stroke_w=svg_length(attrs.get("stroke-width"), 1.0) * (tf[0] + tf[1]) / 2,
+            dash=dash not in ("none", "") and any(svg_numbers(dash)),
+            fill_alpha=opacity * float(attrs.get("fill-opacity", "1")),
+            stroke_alpha=opacity * float(attrs.get("stroke-opacity", "1")),
+        )
+
+    def box(self, tag: str, attrs: dict[str, str], tf: Transform) -> None:
+        g = self.style(attrs, tf, "black")
+        if tag == "rect":
+            x, y = svg_length(attrs.get("x")), svg_length(attrs.get("y"))
+            w, h = svg_length(attrs.get("width")), svg_length(attrs.get("height"))
+            rx = attrs.get("rx") or attrs.get("ry")
+            radius = svg_length(rx) if rx else 0.0
+            g.kind = "roundRect" if radius > 0 else "rect"
+            g.name = "四角形"
+        else:
+            cx, cy = svg_length(attrs.get("cx")), svg_length(attrs.get("cy"))
+            if tag == "circle":
+                rx = ry = svg_length(attrs.get("r"))
+            else:
+                rx, ry = svg_length(attrs.get("rx")), svg_length(attrs.get("ry"))
+            x, y, w, h = cx - rx, cy - ry, 2 * rx, 2 * ry
+            radius = 0.0
+            g.kind = "ellipse"
+            g.name = "円"
+        if w <= 0 or h <= 0:
+            return
+        g.x, g.y = apply(tf, (x, y))
+        g.w, g.h = w * tf[0], h * tf[1]
+        g.radius = min(radius * (tf[0] + tf[1]) / 2, g.w / 2, g.h / 2)
+        self.items.append(g)
+
+    def lines(self, tag: str, attrs: dict[str, str], tf: Transform) -> None:
+        if tag == "line":
+            pts = [
+                (svg_length(attrs.get("x1")), svg_length(attrs.get("y1"))),
+                (svg_length(attrs.get("x2")), svg_length(attrs.get("y2"))),
+            ]
+            cmds = [("M", [pts[0]]), ("L", [pts[1]])]
+        elif tag in ("polyline", "polygon"):
+            values = svg_numbers(attrs.get("points"))
+            pts = list(zip(values[0::2], values[1::2]))
+            if len(pts) < 2:
+                return
+            cmds = [("M", [pts[0]])] + [("L", [p]) for p in pts[1:]]
+            if tag == "polygon":
+                cmds.append(("Z", []))
+        else:
+            cmds = parse_path(attrs.get("d", ""))
+            if not cmds:
+                return
+        closed = any(c == "Z" for c, _ in cmds)
+        g = self.style(attrs, tf, "none" if tag == "line" else "black")
+        g.kind = "line" if tag == "line" else "path"
+        g.name = "線" if tag in ("line", "polyline") or not closed else "図形"
+        g.path = [(c, [apply(tf, p) for p in ps]) for c, ps in cmds]
+        if tag == "line":
+            g.fill = None
+        sw_svg = svg_length(attrs.get("stroke-width"), 1.0)
+        for key, end in (("marker-start", "head"), ("marker-end", "tail")):
+            m = re.match(r"\s*url\(\s*['\"]?#([^'\")\s]+)", attrs.get(key, ""))
+            if m and m.group(1) in self.markers and g.stroke:
+                width, stroke_units = self.markers[m.group(1)]
+                ratio = width if stroke_units else width / max(sw_svg, 0.1)
+                setattr(g, end, arrow_size(ratio))
+        self.items.append(g)
+
+    def text(
+        self, el: ElementTree.Element, attrs: dict[str, str], tf: Transform
+    ) -> None:
+        scale = (tf[0] + tf[1]) / 2
+        lines: list[SvgText] = []
+
+        def size_of(a: dict[str, str]) -> float:
+            return svg_length(a.get("font-size"), 16.0)
+
+        def new_line(a: dict[str, str], x: float, y: float) -> SvgText:
+            size = size_of(a)
+            baseline = a.get("dominant-baseline", "").strip()
+            shift = {"middle": 0.35, "central": 0.35, "hanging": 0.8}.get(baseline, 0.0)
+            px, py = apply(tf, (x, y + shift * size))
+            color = svg_color(a.get("fill", "black"), a.get("color")) or TEXT
+            line = SvgText(
+                px, py, a.get("text-anchor", "start"), size * scale, color, []
+            )
+            lines.append(line)
+            return line
+
+        def add(s: str | None, a: dict[str, str]) -> None:
+            if not s:
+                return
+            s = re.sub(r"\s+", " ", s)
+            weight = a.get("font-weight", "normal").strip()
+            bold = weight in ("bold", "bolder") or (
+                weight.isdigit() and int(weight) >= 600
+            )
+            color = svg_color(a.get("fill", "black"), a.get("color"))
+            line = lines[-1]
+            line.runs.append(
+                Run(
+                    s,
+                    bold=bold,
+                    italic=a.get("font-style") == "italic",
+                    color=None if color == line.color else color,
+                )
+            )
+
+        def visit(node: ElementTree.Element, a: dict[str, str]) -> None:
+            add(node.text, a)
+            for child in node:
+                tag = svg_tag(child)
+                if tag in ("title", "desc", ""):
+                    pass
+                elif tag == "tspan":
+                    ca = dict(a)
+                    ca.update(svg_attrs(child))
+                    if any(k in child.attrib for k in ("x", "y", "dy")):
+                        last = lines[-1]
+                        x0 = (last.x - tf[2]) / tf[0]
+                        y0 = (last.y - tf[3]) / tf[1]
+                        x = svg_numbers(child.get("x"))[:1] or [x0]
+                        y = svg_numbers(child.get("y"))[:1] or [y0]
+                        dy = svg_length(child.get("dy"), 0.0, size_of(ca))
+                        new_line(ca, x[0], y[0] + dy)
+                        lines[-1].anchor = ca.get(
+                            "text-anchor", a.get("text-anchor", "start")
+                        )
+                    visit(child, ca)
+                else:
+                    raise SvgError(f"<text> の中の <{tag}>")
+                add(child.tail, a)
+
+        x = (svg_numbers(attrs.get("x")) or [0.0])[0]
+        y = (svg_numbers(attrs.get("y")) or [0.0])[0]
+        new_line(attrs, x, y)
+        visit(el, attrs)
+        for line in lines:
+            while line.runs and not line.runs[0].text.strip():
+                line.runs.pop(0)
+            while line.runs and not line.runs[-1].text.strip():
+                line.runs.pop()
+            if line.runs:
+                line.runs[0].text = line.runs[0].text.lstrip()
+                line.runs[-1].text = line.runs[-1].text.rstrip()
+                self.items.append(line)
+
+    # -- 整える --
+
+    def merge_arrowheads(self) -> None:
+        """線の端に置いた三角形 (polygon) を、線の矢じりにする"""
+        lines = [
+            g
+            for g in self.items
+            if isinstance(g, Geom)
+            and g.stroke
+            and g.path
+            and not any(c == "Z" for c, _ in g.path)
+        ]
+        for tri in list(self.items):
+            if not (isinstance(tri, Geom) and tri.kind == "path" and tri.fill):
+                continue
+            pts = [ps[0] for c, ps in tri.path if c in ("M", "L")]
+            if len(pts) == 4 and pts[0] == pts[3]:
+                pts = pts[:3]
+            if len(pts) != 3 or [c for c, _ in tri.path][-1] != "Z":
+                continue
+            if any(c not in ("M", "L", "Z") for c, _ in tri.path):
+                continue
+            # 先端は、いちばん短い辺の向かいの頂点
+            edges = [
+                (math.dist(pts[(i + 1) % 3], pts[(i + 2) % 3]), i) for i in range(3)
+            ]
+            base_len, tip_i = min(edges)
+            tip = pts[tip_i]
+            a, b = pts[(tip_i + 1) % 3], pts[(tip_i + 2) % 3]
+            base = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+            length = math.dist(tip, base)
+            if length == 0:
+                continue
+            ux, uy = (tip[0] - base[0]) / length, (tip[1] - base[1]) / length
+            for line in lines:
+                if line.stroke != tri.fill:
+                    continue
+                for end in ("tail", "head"):
+                    if getattr(line, end):
+                        continue
+                    i_end, i_prev = (-1, -2) if end == "tail" else (0, 1)
+                    if len(line.path) < 2 or line.path[i_end][0] not in ("M", "L"):
+                        continue
+                    if end == "head" and line.path[1][0] not in ("L",):
+                        continue
+                    p = line.path[i_end][1][-1]
+                    q = line.path[i_prev][1][-1]
+                    seg = math.dist(p, q)
+                    if seg == 0 or math.dist(p, base) > 0.6 * length + line.stroke_w:
+                        continue
+                    if ((p[0] - q[0]) * ux + (p[1] - q[1]) * uy) / seg < 0.95:
+                        continue
+                    line.path[i_end] = (line.path[i_end][0], [tip])
+                    setattr(line, end, arrow_size(base_len / max(line.stroke_w, 0.1)))
+                    self.items.remove(tri)
+                    break
+                else:
+                    continue
+                break
+
+    def place_texts(self) -> None:
+        """箱 (四角・円・閉じた形) の中にある文字を、その図形の文字にする"""
+        cx, cy, cw, ch = self.canvas
+        for item in list(self.items):
+            if not isinstance(item, SvgText):
+                continue
+            mid_x = item.left + item.width / 2
+            mid_y = item.y - 0.35 * item.size
+            best: Geom | None = None
+            for g in self.items[: self.items.index(item)]:
+                if not isinstance(g, Geom) or g.kind == "line":
+                    continue
+                if g.kind == "path" and not any(c == "Z" for c, _ in g.path):
+                    continue
+                if not (g.fill or g.stroke):
+                    continue
+                gx, gy, gw, gh = self.bbox(g)
+                if gw * gh >= 0.9 * cw * ch:  # 図全体の背景には付けない
+                    continue
+                if not (gx <= mid_x <= gx + gw and gy <= mid_y <= gy + gh):
+                    continue
+                if item.width > gw + 1:
+                    continue
+                others = self.texts.get(id(g), [])
+                if others and (
+                    others[0].anchor != item.anchor or abs(others[0].x - item.x) > 1
+                ):
+                    continue
+                if best is None or gw * gh < self.bbox(best)[2] * self.bbox(best)[3]:
+                    best = g
+            if best is not None:
+                self.texts.setdefault(id(best), []).append(item)
+                self.items.remove(item)
+
+    @staticmethod
+    def bbox(g: Geom) -> tuple[float, float, float, float]:
+        if g.kind in ("line", "path"):
+            pts = [p for _, ps in g.path for p in ps]
+            xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+            return min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)
+        return g.x, g.y, g.w, g.h
+
+    def finish(self, g: Geom) -> None:
+        """図形の位置を決め、中の文字を段落にする"""
+        if g.kind in ("line", "path"):
+            g.x, g.y, g.w, g.h = self.bbox(g)
+            if g.kind == "line":
+                (x1, y1), (x2, y2) = g.path[0][1][0], g.path[-1][1][-1]
+                g.flip_h, g.flip_v = x2 < x1, y2 < y1
+            g.path = [(c, [(p[0] - g.x, p[1] - g.y) for p in ps]) for c, ps in g.path]
+        lines = sorted(self.texts.get(id(g), []), key=lambda t: t.y)
+        if not lines:
+            return
+        first = lines[0]
+        g.align = {"middle": "ctr", "end": "r"}.get(first.anchor, "l")
+        if g.align == "ctr":
+            d = first.x - (g.x + g.w / 2)
+            g.inset_l, g.inset_r = max(2 * d, 0.0), max(-2 * d, 0.0)
+        elif g.align == "l":
+            g.inset_l = first.x - g.x
+        else:
+            g.inset_r = g.x + g.w - first.x
+        g.inset_t = first.top - g.y
+        bottom: float | None = None  # 前の行の下端
+        for line in lines:
+            para = line.para(g.align)
+            top = line.top
+            if bottom is not None:
+                para.space_before = max(top - bottom, 0.0)
+                top = max(top, bottom)
+            bottom = top + para.line
+            g.paras.append(para)
+        inner = g.w - g.inset_l - g.inset_r
+        g.wrap = all(t.width <= inner for t in lines)
+
+    def free_text(self, t: SvgText) -> TextBox:
+        align = {"middle": "ctr", "end": "r"}.get(t.anchor, "l")
+        return TextBox(
+            t.left,
+            t.top,
+            t.width,
+            t.size * SVG_TEXT_LINE,
+            [t.para(align)],
+            wrap=False,
+            name="テキスト",
+        )
+
+    @staticmethod
+    def glue(line: Geom, items: list[Geom | TextBox]) -> None:
+        """直線の端が箱の辺の真ん中にあれば、その箱につなぐ"""
+        start = (
+            line.x + (line.w if line.flip_h else 0),
+            line.y + (line.h if line.flip_v else 0),
+        )
+        end = (
+            line.x + (0 if line.flip_h else line.w),
+            line.y + (0 if line.flip_v else line.h),
+        )
+        for attr, p in (("glue_start", start), ("glue_end", end)):
+            best = None
+            for g in items:
+                if not isinstance(g, Geom) or g.kind not in ("rect", "roundRect"):
+                    continue
+                sites = [
+                    (g.x + g.w / 2, g.y),  # 0: 上
+                    (g.x, g.y + g.h / 2),  # 1: 左
+                    (g.x + g.w / 2, g.y + g.h),  # 2: 下
+                    (g.x + g.w, g.y + g.h / 2),  # 3: 右
+                ]
+                for idx, site in enumerate(sites):
+                    dist = math.dist(p, site)
+                    if dist <= SVG_GLUE_DISTANCE and (best is None or dist < best[0]):
+                        best = (dist, g, idx)
+            if best:
+                setattr(line, attr, (best[1], best[2]))
+
+
+def svg_drawing(
+    data: bytes, x: float, y: float, w: float, h: float, alt: str = ""
+) -> Drawing:
+    """SVG を、PowerPoint の図形のグループにする。できなければ SvgError"""
+    try:
+        root = ElementTree.fromstring(data)
+    except ElementTree.ParseError as e:
+        raise SvgError("SVG として読めない") from e
+    try:
+        items = SvgConverter(root, (x, y, w, h)).convert()
+    except (ValueError, ZeroDivisionError) as e:
+        raise SvgError(f"数の書き方 ({e})") from e
+    if not items:
+        raise SvgError("図形が無い")
+    return Drawing(x, y, w, h, items, alt)
+
+
 # ---- レイアウト ----
 
 
@@ -1095,6 +1928,21 @@ class Layout:
             self.warn.append(f"この形式の画像は使えません (省きました): {src}")
             return None
         return path
+
+    def figure(
+        self, path: Path, x: float, y: float, w: float, h: float, alt: str
+    ) -> Shape:
+        """本文の画像。SVG の図は PowerPoint の図形にし、できなければ画像のまま入れる"""
+        # 仮の画像 (placeholder.svg) は差し替えるものなので、画像のまま (「図の変更」で替えられる)
+        if path.suffix.lower() == ".svg" and path.name != "placeholder.svg":
+            try:
+                return svg_drawing(path.read_bytes(), x, y, w, h, alt)
+            except SvgError as e:
+                self.warn.append(
+                    f"SVG の図を PowerPoint の図形にできないので、画像のまま入れました"
+                    f" ({e}): {path.name}"
+                )
+        return Picture(x, y, w, h, path, alt)
 
     # -- 本文の流し込み --
 
@@ -1155,7 +2003,7 @@ class Layout:
             scale = min(1.0, w / iw)
             pw, ph = iw * scale, ih * scale
             px = x + (w - pw) / 2 if ctx.center else x
-            shapes.append(Picture(px, y, pw, ph, path, block.alt))
+            shapes.append(self.figure(path, px, y, pw, ph, block.alt))
             return ph + 0.335 * ctx.size  # 画像は文字の行に乗るので、下に少しすき間
         if isinstance(block, Quote):
             size, line = ctx.size, ctx.size * ctx.line
@@ -1451,7 +2299,7 @@ class Layout:
                 box = contain(
                     image_x, BODY_TOP, IMAGE_W, BODY_BOTTOM - BODY_TOP, iw, ih
                 )
-                shapes.append(Picture(*box, path, image.alt))
+                shapes.append(self.figure(path, *box, image.alt))
         self.flow(blocks, text_x, BODY_TOP, text_w, NORMAL, shapes, first_margin)
 
     def center(self, blocks: list[Block], shapes: list[Shape]) -> None:
@@ -1523,11 +2371,8 @@ class Layout:
                 path = self.resolve(block.src)
                 if path:
                     iw, ih = image_size(path)
-                    shapes.append(
-                        Picture(
-                            *contain(BODY_LEFT, y, BODY_W, h, iw, ih), path, block.alt
-                        )
-                    )
+                    box = contain(BODY_LEFT, y, BODY_W, h, iw, ih)
+                    shapes.append(self.figure(path, *box, block.alt))
             elif is_text(block):
                 paras, _ = text_paras(block, ctx, BODY_W)
                 shapes.append(TextBox(BODY_LEFT, y, BODY_W, h, paras))
@@ -1737,6 +2582,8 @@ class SlideWriter:
             return self.picture(s)
         if isinstance(s, Rect):
             return self.rect(s)
+        if isinstance(s, Drawing):
+            return self.drawing(s)
         return self.table(s)
 
     @staticmethod
@@ -1797,10 +2644,8 @@ class SlideWriter:
             if s.border
             else ""
         )
-        body = (
-            f'<a:bodyPr wrap="square" lIns="{emu(s.inset_l)}" tIns="{emu(s.inset_t)}" '
-            f'rIns="{emu(s.inset_r)}" bIns="{emu(s.inset_b)}" anchor="{s.anchor}" rtlCol="0">'
-            "<a:noAutofit/></a:bodyPr><a:lstStyle/>"
+        body = self.body_pr(
+            s.wrap, s.inset_l, s.inset_t, s.inset_r, s.inset_b, s.anchor
         )
         return (
             f'<p:sp><p:nvSpPr><p:cNvPr id="{sid}" name="{esc(s.name)} {sid}"/>'
@@ -1808,6 +2653,123 @@ class SlideWriter:
             f"<p:spPr>{self.xfrm(s.x, s.y, s.w, s.h)}"
             f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>{fill}{line}</p:spPr>'
             f"<p:txBody>{body}{''.join(self.paragraph(p) for p in s.paras)}</p:txBody></p:sp>"
+        )
+
+    @staticmethod
+    def body_pr(
+        wrap: bool, left: float, top: float, right: float, bottom: float, anchor: str
+    ) -> str:
+        return (
+            f'<a:bodyPr wrap="{"square" if wrap else "none"}" lIns="{emu(left)}" '
+            f'tIns="{emu(top)}" rIns="{emu(right)}" bIns="{emu(bottom)}" '
+            f'anchor="{anchor}" rtlCol="0"><a:noAutofit/></a:bodyPr><a:lstStyle/>'
+        )
+
+    # -- SVG の図 (図形のグループ) --
+
+    def drawing(self, d: Drawing) -> str:
+        sid = self.shape_id()
+        ids = {id(g): self.shape_id() for g in d.items if isinstance(g, Geom)}
+        children = "".join(
+            self.geom(g, ids) if isinstance(g, Geom) else self.textbox(g)
+            for g in d.items
+        )
+        boxes = [(g.x, g.y, g.x + g.w, g.y + g.h) for g in d.items]
+        x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+        x1, y1 = max(b[2] for b in boxes), max(b[3] for b in boxes)
+        off = f'<a:off x="{emu(x0)}" y="{emu(y0)}"/>'
+        ext = f'<a:ext cx="{emu(x1 - x0)}" cy="{emu(y1 - y0)}"/>'
+        ch = off.replace("a:off", "a:chOff") + ext.replace("a:ext", "a:chExt")
+        return (
+            f'<p:grpSp><p:nvGrpSpPr><p:cNvPr id="{sid}" name="{esc(d.name)} {sid}" '
+            f'descr="{esc(d.alt)}"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+            f"<p:grpSpPr><a:xfrm>{off}{ext}{ch}</a:xfrm></p:grpSpPr>"
+            f"{children}</p:grpSp>"
+        )
+
+    @staticmethod
+    def color(value: str, alpha: float = 1.0) -> str:
+        inner = f'<a:alpha val="{round(alpha * 100000)}"/>' if alpha < 1 else ""
+        return (
+            f'<a:solidFill><a:srgbClr val="{value}">{inner}</a:srgbClr></a:solidFill>'
+        )
+
+    def line_props(self, g: Geom) -> str:
+        if not g.stroke:
+            return "<a:ln><a:noFill/></a:ln>"
+        dash = "dash" if g.dash else "solid"
+        ends = "".join(
+            f'<a:{tag} type="triangle" w="{size}" len="{size}"/>'
+            for tag, size in (("headEnd", g.head), ("tailEnd", g.tail))
+            if size
+        )
+        return (
+            f'<a:ln w="{emu(g.stroke_w)}" cap="flat">'
+            f"{self.color(g.stroke, g.stroke_alpha)}"
+            f'<a:prstDash val="{dash}"/><a:miter lim="800000"/>{ends}</a:ln>'
+        )
+
+    def geom(self, g: Geom, ids: dict[int, int]) -> str:
+        sid = ids[id(g)]
+        name = f'<p:cNvPr id="{sid}" name="{esc(g.name)} {sid}"/>'
+        line = self.line_props(g)
+        if g.kind == "line":
+            glue = "".join(
+                f'<a:{tag} id="{ids[id(target[0])]}" idx="{target[1]}"/>'
+                for tag, target in (("stCxn", g.glue_start), ("endCxn", g.glue_end))
+                if target and id(target[0]) in ids
+            )
+            flips = (' flipH="1"' if g.flip_h else "") + (
+                ' flipV="1"' if g.flip_v else ""
+            )
+            xfrm = self.xfrm(g.x, g.y, g.w, g.h).replace("<a:xfrm>", f"<a:xfrm{flips}>")
+            return (
+                f"<p:cxnSp><p:nvCxnSpPr>{name}<p:cNvCxnSpPr>{glue}</p:cNvCxnSpPr><p:nvPr/>"
+                f"</p:nvCxnSpPr><p:spPr>{xfrm}"
+                '<a:prstGeom prst="straightConnector1"><a:avLst/></a:prstGeom>'
+                f"<a:noFill/>{line}</p:spPr></p:cxnSp>"
+            )
+        if g.kind == "path":
+            geometry = self.cust_geom(g)
+        elif g.kind == "roundRect":
+            adj = min(round(g.radius / max(min(g.w, g.h), 0.01) * 100000), 50000)
+            geometry = (
+                '<a:prstGeom prst="roundRect"><a:avLst>'
+                f'<a:gd name="adj" fmla="val {adj}"/></a:avLst></a:prstGeom>'
+            )
+        else:
+            geometry = f'<a:prstGeom prst="{g.kind}"><a:avLst/></a:prstGeom>'
+        fill = self.color(g.fill, g.fill_alpha) if g.fill else "<a:noFill/>"
+        if g.paras:
+            body = self.body_pr(g.wrap, g.inset_l, g.inset_t, g.inset_r, 0, "t")
+            paras = "".join(self.paragraph(p) for p in g.paras)
+        else:  # 文字を入力したときは、真ん中に図の文字と同じ書式で入る
+            body = self.body_pr(True, 0, 0, 0, 0, "ctr")
+            empty = Para([], 20, 24, TEXT, align="ctr")
+            end = self.run_props(empty, Run(""), tag="a:endParaRPr")
+            paras = f'<a:p><a:pPr algn="ctr"/>{end}</a:p>'
+        return (
+            f"<p:sp><p:nvSpPr>{name}<p:cNvSpPr/><p:nvPr/></p:nvSpPr>"
+            f"<p:spPr>{self.xfrm(g.x, g.y, g.w, g.h)}{geometry}{fill}{line}</p:spPr>"
+            f"<p:txBody>{body}{paras}</p:txBody></p:sp>"
+        )
+
+    @staticmethod
+    def cust_geom(g: Geom) -> str:
+        tags = {"M": "a:moveTo", "L": "a:lnTo", "C": "a:cubicBezTo", "Q": "a:quadBezTo"}
+        cmds = []
+        for c, pts in g.path:
+            if c == "Z":
+                cmds.append("<a:close/>")
+                continue
+            inner = "".join(f'<a:pt x="{emu(x)}" y="{emu(y)}"/>' for x, y in pts)
+            cmds.append(f"<{tags[c]}>{inner}</{tags[c]}>")
+        fill = "" if g.fill else ' fill="none"'
+        return (
+            "<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/>"
+            '<a:rect l="l" t="t" r="r" b="b"/><a:pathLst>'
+            f'<a:path w="{max(emu(g.w), 1)}" h="{max(emu(g.h), 1)}"{fill}>'
+            f"{''.join(cmds)}</a:path></a:pathLst></a:custGeom>"
         )
 
     def table(self, s: TableShape) -> str:
