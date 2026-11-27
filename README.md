@@ -23,7 +23,7 @@ LLM はコマンドを実行できないので、スクリプトは自分で Pow
 
 このキット (リポジトリ) を 1 か所に置きます。プロジェクトには何も置きません。
 [Releases](https://github.com/takuya109048/llm-assist-kit/releases) の `llm-assist-kit-<版>.zip` を
-展開するか、`git clone` します (zip には開発用の `tests/`・`tools/` は入っていません)。
+展開するか、`git clone` します (zip には開発用の `tests/`・`tools/` と、例の `examples/` は入っていません)。
 
 ```
 C:\tools\llm-assist-kit\      ← キット (例)

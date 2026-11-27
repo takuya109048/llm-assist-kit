@@ -6,7 +6,7 @@
 
 作るもの:
     dist/llm-assist-kit-<版>.zip   git が管理しているファイルから、開発用のもの
-                                   (tests/、tools/、.github/) を除いたもの。
+                                   (tests/、tools/、.github/、examples/) を除いたもの。
                                    展開すると llm-assist-kit-<版>/ ができる
     dist/release-notes.md          CHANGELOG.md の、その版の節
 
@@ -25,8 +25,8 @@ from pathlib import Path
 
 KIT = Path(__file__).resolve().parent.parent
 NAME = "llm-assist-kit"
-# 配布する zip に入れない、開発用のもの
-DEV_ONLY = ("tests/", "tools/", ".github/")
+# 配布する zip に入れない、開発用のもの (examples/ はリポジトリで見るための例)
+DEV_ONLY = ("tests/", "tools/", ".github/", "examples/")
 
 
 def project_version(root: Path = KIT) -> str:
