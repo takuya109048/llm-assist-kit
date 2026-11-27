@@ -315,6 +315,34 @@ def test_span_color_in_pptx_and_nested_markdown():
     assert italic and 'i="1"' in italic.group(1)  # *強調* は斜体のまま (色は付けない)
 
 
+def test_span_colors_in_headings():
+    """見出し (表紙のタイトル・ヘッダーのタイトル・小見出し) の中の <span> も色分けする"""
+    md = (
+        '<!-- _class: cover -->\n\n# 発表の<span class="blue">タイトル</span>\n\n---\n\n'
+        '## 現状の<span class="red">課題</span>\n\n'
+        '### 小見出しの<span class="green">効果</span>\n\n本文\n'
+    )
+    slides = slides_of(md)
+    layout = ep.Layout(Path("."), [])
+    [cover_title] = shapes_named(layout.slide(slides[0], 1, 2), "タイトル")
+    page = layout.slide(slides[1], 2, 2)
+    [title] = shapes_named(page, "タイトル")
+    h3 = next(
+        p
+        for s in page.shapes
+        if isinstance(s, ep.TextBox) and s.name == "テキスト"
+        for p in s.paras
+        if ep.plain_text(p.runs).startswith("小見出し")
+    )
+    for para, expected in (
+        (cover_title.paras[0], [("発表の", None), ("タイトル", "1F4E8C")]),
+        (title.paras[0], [("現状の", None), ("課題", "D32F2F")]),
+        (h3, [("小見出しの", None), ("効果", "2E7D32")]),
+    ):
+        assert [(r.text, r.color) for r in para.runs] == expected
+        assert para.bold and para.color == ep.TEXT  # 色の無い部分は黒の太字
+
+
 def test_simple_html_tags():
     runs = ep.parse_inline("<b>太</b><u>下</u><i>斜</i><s>消</s><div>中</div>")
     assert [(r.text, r.bold, r.underline, r.italic, r.strike) for r in runs] == [
